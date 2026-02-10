@@ -21,7 +21,7 @@ def serial_to_datetime(serial):
     try:
         serial = float(serial)
         base_date = datetime(1899, 12, 30)
-        # スマホで見やすいよう「秒」を削って「月/日 時:分」に短縮
+        # スマホで幅を取らないよう「月/日 時:分」に短縮
         return (base_date + timedelta(days=serial)).strftime('%m/%d %H:%M')
     except:
         return str(serial)
@@ -53,7 +53,7 @@ try:
        
         df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
 
-        target_no = st.text_input("検索したいパレット番号を入力してください")
+        target_no = st.text_input("検索したいパレット番号を入力（例: 1）")
 
         if target_no:
             search_val = str(target_no).strip()
@@ -87,13 +87,35 @@ try:
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "パレット番号": st.column_config.TextColumn("パレット番号", width="small"),
-                            "日時": st.column_config.TextColumn("日時", width="small"),
-                            "商品名": st.column_config.TextColumn("商品名", width="large"),
-                            "元エリア": st.column_config.TextColumn("元エリア", width="medium"),
-                            "移動エリア": st.column_config.TextColumn("移動エリア", width="medium"),
-                            "コード": st.column_config.TextColumn("コード", width="small"),
-                            "担当者": st.column_config.TextColumn("担当者", width="small"),
+                            "パレット番号": st.column_config.TextColumn(
+                                "No.",          # 見出しを短く
+                                width="small",
+                                format="%s号"     # 表示に「号」を付ける
+                            ),
+                            "日時": st.column_config.TextColumn(
+                                "日時", 
+                                width="small"
+                            ),
+                            "商品名": st.column_config.TextColumn(
+                                "商品名", 
+                                width="medium"
+                            ),
+                            "元エリア": st.column_config.TextColumn(
+                                "元エリア", 
+                                width="small"
+                            ),
+                            "移動エリア": st.column_config.TextColumn(
+                                "移動先",        # 見出しを短く
+                                width="small"
+                            ),
+                            "コード": st.column_config.TextColumn(
+                                "コード", 
+                                width="small"
+                            ),
+                            "担当者": st.column_config.TextColumn(
+                                "担当",          # 見出しを短く
+                                width="small"
+                            ),
                         }
                     )
                 else:
@@ -111,6 +133,6 @@ qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data= {f
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    st.image(qr_api_url, caption="フォーム用QR", width=150)
+    st.image(qr_api_url, caption="フォーム用QR", width=120)
 with col2:
     st.link_button("👉 フォームを開く", form_url)

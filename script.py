@@ -3,7 +3,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime, timedelta
-import json
 
 # アプリの基本設定
 st.set_page_config(page_title="在庫検索アプリ", layout="wide")
@@ -13,15 +12,11 @@ st.title("📦 パレット在庫検索システム")
 def get_client():
     # 権限の範囲を設定
     scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-    
-    # 【重要】GitHubのファイルではなく、StreamlitのSecretsから設定を読み込む
+    # GitHubにアップロードしたファイルから直接読み込む設定に戻します
     try:
-        # Secretsに保存した「gcp_service_account」という名前のデータを読み込む
-        service_account_info = json.loads(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
-        return gspread.authorize(creds)
+        return gspread.authorize(Credentials.from_service_account_file('spread-sheet-01.json', scopes=scope))
     except Exception as e:
-        st.error(f"Secretsの読み込みに失敗しました。設定を確認してください: {e}")
+        st.error(f"鍵ファイルの読み込みに失敗しました。ファイル名が正しいか確認してください: {e}")
         return None
 
 def serial_to_datetime(serial):
@@ -41,37 +36,33 @@ try:
         sh = client.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet("フォームの回答 1")
         
-        # データを取得（計算結果もそのまま取得）
+        # データを取得
         all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
         if len(all_values) >= 5:
-            # 5行目以降がデータ
             raw_data = all_values[4:]
             data_list = []
            
             for row in raw_data:
-                # パレット番号（27列目=インデックス26）があるか確認
                 if len(row) > 37:
                     p_val = str(row[26]).strip()
                     if p_val and p_val not in ["", "#N/A", "None"]:
                         data_list.append([
-                            p_val,                        # パレット番号
-                            serial_to_datetime(row[27]),  # 日時
-                            str(row[29]),                 # 商品名
-                            str(row[31]),                 # 元エリア
-                            str(row[33]),                 # 移動エリア
-                            str(row[35]),                 # コード
-                            str(row[37])                  # 担当者
+                            p_val,                        
+                            serial_to_datetime(row[27]),  
+                            str(row[29]),                 
+                            str(row[31]),                 
+                            str(row[33]),                 
+                            str(row[35]),                 
+                            str(row[37])                  
                         ])
            
             df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
 
-            # 検索窓
             target_no = st.text_input("検索したい番号を入力（例: 135）")
 
             if target_no:
                 search_val = str(target_no).strip()
-                # 数値の表記ゆれ対策（135 と 135.0 を同じに扱う）
                 def normalize_num(s):
                     s = str(s).strip()
                     if s.endswith('.0'): s = s[:-2]
@@ -85,7 +76,6 @@ try:
                     product_name = match_row.iloc[0]["商品名"]
                     st.success(f"✅ 商品名：{product_name}")
 
-                    # 同じ商品名かつ「工場内」を含まない在庫を抽出
                     results = df[
                         (df["商品名"] == product_name) &
                         (~df["元エリア"].str.contains("工場内", na=False)) &
@@ -116,7 +106,7 @@ try:
 except Exception as e:
     st.error(f"エラーが発生しました: {e}")
 
-# フッターにQRコードを表示
+# フッター
 st.markdown("---")
 st.write("### 📝 データの入力・更新")
 form_url = "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing"

@@ -38,13 +38,13 @@ try:
                 p_val = str(row[26]).strip()
                 if p_val and p_val not in ["", "#N/A", "None"]:
                     data_list.append([
-                        p_val,                        # パレット番号（数字のまま）
-                        serial_to_datetime(row[27]),  # 日時
-                        str(row[29]),                 # 商品名
-                        str(row[31]),                 # 元エリア
-                        str(row[33]),                 # 移動エリア
-                        str(row[35]),                 # コード
-                        str(row[37])                  # 担当者
+                        p_val,                        
+                        serial_to_datetime(row[27]),  
+                        str(row[29]),                 
+                        str(row[31]),                 
+                        str(row[33]),                 
+                        str(row[35]),                 
+                        str(row[37])                  
                     ])
        
         df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
@@ -74,9 +74,7 @@ try:
 
                 if not results.empty:
                     st.write("### 📍 在庫エリア一覧")
-                    
                     col_order = ["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"]
-                    
                     st.dataframe(
                         results[col_order],
                         use_container_width=True,

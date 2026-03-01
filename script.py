@@ -11,9 +11,10 @@ st.title("📦 パレット在庫検索システム")
 def get_client():
     scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     try:
+        # アップロードした鍵ファイル名と一致している必要があります
         return gspread.authorize(Credentials.from_service_account_file('spread-sheet-01.json', scopes=scope))
     except Exception as e:
-        st.error(f"鍵ファイルの読み込みに失敗しました: {e}")
+        st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
 def serial_to_datetime(serial):
@@ -29,49 +30,39 @@ try:
     if client:
         SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
         sh = client.open_by_key(SPREADSHEET_ID)
+        # シート名が「フォームの回答 1」であることを確認してください
         worksheet = sh.worksheet("フォームの回答 1")
         
-        # すべてのデータを取得（列を自動判別するため）
+        # 全データを取得
         all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
-        if len(all_values) >= 1:
-            # 1行目（ヘッダー）から「パレット番号」などの列を探す
-            header = all_values[0]
-            
-            # 列番号を自動で見つける（もし「パレット番号」という名前の列があればそれを使う）
-            # 見つからない場合は、これまでの設定通り27列目（インデックス26）を使います
-            p_idx = 26
-            for i, h in enumerate(header):
-                if "パレット番号" in str(h):
-                    p_idx = i
-                    break
-
-            raw_data = all_values[1:] # 2行目以降がデータ
+        # 画像に基づき、4行目（インデックス3）からデータ開始
+        if len(all_values) >= 4:
+            # AA列は27番目なのでインデックスは26
+            p_idx = 26 
+            raw_data = all_values[3:] 
             data_list = []
            
             for row in raw_data:
                 if len(row) > p_idx:
                     p_val = str(row[p_idx]).strip()
-                    # 空白やエラー値を除外
                     if p_val and p_val not in ["", "#N/A", "None", "nan"]:
-                        # データの抽出（列の順番がズレていてもエラーにならないよう調整）
+                        # 画像の列配置に合わせて取得（AA:番号, AB:日時, AC:商品名, AE:移動前, AF:移動後）
                         data_list.append([
-                            p_val,                                    # パレット番号
-                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # 日時
-                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               # 商品名
-                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               # 元エリア
-                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               # 移動エリア
-                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               # コード
-                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              # 担当者
+                            p_val,                                    # AA: パレット番号
+                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # AB: 日時
+                            str(row[p_idx+2]) if len(row) > p_idx+2 else "",               # AC: 商品名
+                            str(row[p_idx+4]) if len(row) > p_idx+4 else "",               # AE: 移動前
+                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               # AF: 移動後
                         ])
            
-            df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
+            df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア"])
 
-            target_no = st.text_input("検索したい番号を入力（例: 135）")
+            target_no = st.text_input("検索したい番号を入力（例: 1）")
 
             if target_no:
                 search_val = str(target_no).strip()
-                # 数字の比較を確実にする（135.0 と 135 を同じとみなす）
+                # 数字の表記ゆれ（1.0 と 1 など）を吸収
                 def normalize_num(s):
                     s = str(s).strip()
                     if s.endswith('.0'): s = s[:-2]
@@ -80,26 +71,21 @@ try:
                 match_row = df[df["パレット番号"].apply(normalize_num) == normalize_num(search_val)]
                
                 if match_row.empty:
-                    st.error(f"番号「{search_val}」は見つかりませんでした。現在登録されているパレット番号を確認してください。")
+                    st.error(f"番号「{search_val}」は見つかりませんでした。")
                 else:
-                    # 最新のデータを表示
-                    latest_row = match_row.iloc[-1] 
-                    product_name = latest_row["商品名"]
-                    st.success(f"✅ 商品名：{product_name}")
-
-                    # その商品が入っている場所を表示
-                    results = df[df["商品名"] == product_name]
-
-                    if not results.empty:
-                        st.write("### 📍 在庫エリア一覧")
-                        st.dataframe(results, use_container_width=True, hide_index=True)
+                    # 一番下の行（最新データ）を取得
+                    latest = match_row.iloc[-1]
+                    st.success(f"✅ 商品名：{latest['商品名']}")
+                    
+                    # 同じ商品の在庫をすべて表示
+                    all_stock = df[df["商品名"] == latest["商品名"]]
+                    st.write("### 📍 在庫エリア一覧")
+                    st.dataframe(all_stock, use_container_width=True, hide_index=True)
         else:
-            st.info("データが空です。")
+            st.info("データが足りません（4行目以降にデータを入力してください）")
 
 except Exception as e:
     st.error(f"エラーが発生しました: {e}")
 
 st.markdown("---")
-st.write("### 📝 データの入力・更新")
-form_url = "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing"
-st.link_button("👉 フォームを開く", form_url)
+st.link_button("👉 フォームを開く", "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing")

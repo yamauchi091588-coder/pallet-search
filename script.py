@@ -27,16 +27,13 @@ def serial_to_datetime(serial):
 try:
     client = get_client()
     if client:
-        # スプレッドシートID
         SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
         sh = client.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet("フォームの回答 1")
         
         all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
-        # 4行目（インデックス3）からデータ開始
         if len(all_values) >= 4:
-            # AA列 = インデックス26
             p_idx = 26 
             raw_data = all_values[3:] 
             data_list = []
@@ -45,7 +42,6 @@ try:
                 if len(row) > p_idx:
                     p_val = str(row[p_idx]).strip()
                     if p_val and p_val not in ["", "#N/A", "None", "nan"]:
-                        # 教えていただいた列情報に基づき抽出
                         data_list.append([
                             p_val,                                    # AA: パレット番号
                             serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # AB: 日時
@@ -67,27 +63,33 @@ try:
                     if s.endswith('.0'): s = s[:-2]
                     return s
 
-                # 入力された番号と一致する行を探す
                 match_row = df[df["パレット番号"].apply(normalize_num) == normalize_num(search_val)]
                
                 if match_row.empty:
-                    st.error(f"番号「{search_val}」は見つかりませんでした。半角数字で入力してください。")
+                    st.error(f"番号「{search_val}」は見つかりませんでした。")
                 else:
-                    # 最新の履歴（一番下の行）から商品名を特定
                     latest = match_row.iloc[-1]
                     product_name = latest["商品名"]
                     
                     st.success(f"✅ 商品名：{product_name}")
                     
-                    # その商品が入っている全在庫を表示
-                    st.write(f"### 📍 「{product_name}」の在庫一覧")
-                    st.dataframe(
-                        df[df["商品名"] == product_name],
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    # --- ここで「工場内」を除外する処理を追加 ---
+                    # 「移動エリア」が「工場内」という文字を含まないデータだけを抽出します
+                    all_stock = df[df["商品名"] == product_name]
+                    available_stock = all_stock[~all_stock["移動エリア"].str.contains("工場内", na=False)]
+                    
+                    st.write(f"### 📍 「{product_name}」の在庫一覧 (工場内を除く)")
+                    
+                    if available_stock.empty:
+                        st.warning("現在、工場外に在庫はありません。")
+                    else:
+                        st.dataframe(
+                            available_stock,
+                            use_container_width=True,
+                            hide_index=True
+                        )
         else:
-            st.info("データが4行目以降に見つかりませんでした。")
+            st.info("データが足りません。")
 
 except Exception as e:
     st.error(f"エラーが発生しました: {e}")

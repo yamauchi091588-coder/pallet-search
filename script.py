@@ -31,31 +31,38 @@ try:
         sh = client.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet("フォームの回答 1")
         
+        # 確実に全ての列（AN列以降も）を取得するように設定
         all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
         if len(all_values) >= 4:
-            p_idx = 26 # AA列
+            p_idx = 26 # AA列（27番目）
             raw_data = all_values[3:] 
             data_list = []
            
             for row in raw_data:
+                # 行の長さがAN列(p_idx+13)まであるか確認
                 if len(row) > p_idx:
                     p_val = str(row[p_idx]).strip()
                     if p_val and p_val not in ["", "#N/A", "None", "nan"]:
-                        # 各列のデータを抽出（AN列はp_idx+13）
-                        data_list.append([
-                            p_val,                                    # AA: 番号
-                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # AB: 日時
-                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               # AD: 商品名
-                            str(row[p_idx+13]) if len(row) > p_idx+13 else "0",            # AN: 本数
-                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               # AF: 移動前
-                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               # AH: 移動後
-                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               # AJ: 品目コード
-                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              # AL: 担当者
-                        ])
+                        
+                        # 本数(AN列)を確実に取得。データがない場合は0を表示
+                        # p_idx(AA) + 13 = AN列
+                        honsu = str(row[p_idx+13]) if len(row) > p_idx+13 else "0"
+                        if honsu == "" or honsu == "None":
+                            honsu = "0"
+
+                        data_list.append({
+                            "パレット番号": p_val,
+                            "日時": serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "",
+                            "商品名": str(row[p_idx+3]) if len(row) > p_idx+3 else "",
+                            "本数": honsu,
+                            "元エリア": str(row[p_idx+5]) if len(row) > p_idx+5 else "",
+                            "移動エリア": str(row[p_idx+7]) if len(row) > p_idx+7 else "",
+                            "コード": str(row[p_idx+9]) if len(row) > p_idx+9 else "",
+                            "担当者": str(row[p_idx+11]) if len(row) > p_idx+11 else ""
+                        })
            
-            # DataFrameの作成（本数列を追加）
-            df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "本数", "元エリア", "移動エリア", "コード", "担当者"])
+            df = pd.DataFrame(data_list)
 
             st.write("### 🔍 在庫を探す")
             col1, col2 = st.columns(2)
@@ -63,6 +70,9 @@ try:
                 target_no = st.text_input("① パレット番号で検索")
             with col2:
                 target_name = st.text_input("② 商品名で曖昧検索")
+
+            # 共通の表示用フィルタリング（工場内を除外）
+            df_display = df[~df["移動エリア"].str.contains("工場内", na=False)]
 
             # 1. 番号で検索
             if target_no:
@@ -81,15 +91,14 @@ try:
                     product_name = latest["商品名"]
                     st.success(f"✅ パレット {search_val} は現在 「{product_name}」 ({latest['本数']}本) です")
                     
-                    all_stock = df[df["商品名"] == product_name]
-                    available_stock = all_stock[~all_stock["移動エリア"].str.contains("工場内", na=False)]
+                    # 同じ商品の在庫一覧を表示
+                    results = df_display[df_display["商品名"] == product_name]
                     st.write(f"📍 「{product_name}」の有効な在庫一覧")
-                    st.dataframe(available_stock, use_container_width=True, hide_index=True)
+                    st.dataframe(results, use_container_width=True, hide_index=True)
 
             # 2. 商品名で曖昧検索
             elif target_name:
-                filtered_df = df[~df["移動エリア"].str.contains("工場内", na=False)]
-                results = filtered_df[filtered_df["商品名"].str.contains(target_name, na=False)]
+                results = df_display[df_display["商品名"].str.contains(target_name, na=False)]
                 
                 if results.empty:
                     st.warning(f"「{target_name}」を含む在庫は見つかりませんでした。")

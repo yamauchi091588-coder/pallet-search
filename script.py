@@ -43,19 +43,26 @@ try:
                     p_val = str(row[p_idx]).strip()
                     if p_val and p_val not in ["", "#N/A", "None", "nan"]:
                         data_list.append([
-                            p_val,                                    # AA: パレット番号
-                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # AB: 日時
-                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               # AD: 商品名
-                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               # AF: 移動前
-                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               # AH: 移動後
-                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               # AJ: 品目コード
-                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              # AL: 担当者
+                            p_val,                                    
+                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", 
+                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               
+                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               
+                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               
+                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               
+                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              
                         ])
            
             df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
 
-            target_no = st.text_input("検索したい番号を入力（例: 1）")
+            # --- 検索機能の強化 ---
+            st.write("### 🔍 在庫を探す")
+            col1, col2 = st.columns(2)
+            with col1:
+                target_no = st.text_input("① パレット番号で検索 (例: 135)")
+            with col2:
+                target_name = st.text_input("② 商品名で曖昧検索 (例: 屋根)")
 
+            # 1. 番号で検索された場合
             if target_no:
                 search_val = str(target_no).strip()
                 def normalize_num(s):
@@ -70,24 +77,29 @@ try:
                 else:
                     latest = match_row.iloc[-1]
                     product_name = latest["商品名"]
+                    st.success(f"✅ パレット {search_val} は現在 「{product_name}」 です")
                     
-                    st.success(f"✅ 商品名：{product_name}")
-                    
-                    # --- ここで「工場内」を除外する処理を追加 ---
-                    # 「移動エリア」が「工場内」という文字を含まないデータだけを抽出します
+                    # 同じ商品の在庫一覧（工場内除外）
                     all_stock = df[df["商品名"] == product_name]
                     available_stock = all_stock[~all_stock["移動エリア"].str.contains("工場内", na=False)]
-                    
-                    st.write(f"### 📍 「{product_name}」の在庫一覧 (工場内を除く)")
-                    
-                    if available_stock.empty:
-                        st.warning("現在、工場外に在庫はありません。")
-                    else:
-                        st.dataframe(
-                            available_stock,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                    st.write(f"📍 「{product_name}」の有効な在庫一覧")
+                    st.dataframe(available_stock, use_container_width=True, hide_index=True)
+
+            # 2. 商品名で曖昧検索された場合
+            elif target_name:
+                # 工場内を除外したデータから、文字が含まれるものを抽出
+                filtered_df = df[~df["移動エリア"].str.contains("工場内", na=False)]
+                results = filtered_df[filtered_df["商品名"].str.contains(target_name, na=False)]
+                
+                if results.empty:
+                    st.warning(f"「{target_name}」を含む在庫は見つかりませんでした。")
+                else:
+                    st.success(f"✅ 「{target_name}」を含む在庫が {len(results)} 件見つかりました")
+                    st.dataframe(results, use_container_width=True, hide_index=True)
+            
+            else:
+                st.info("番号または商品名を入力してください。")
+
         else:
             st.info("データが足りません。")
 

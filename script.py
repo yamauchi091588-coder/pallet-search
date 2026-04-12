@@ -106,6 +106,12 @@ if mode == "形材検索（パレット）":
                     st.info("番号または商品名を入力してください。")
             else:
                 st.info("データが足りません。")
+
+        # --- 形材検索モードの時だけフォームボタンを表示 ---
+        st.markdown("---")
+        form_url = "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing"
+        st.link_button("👉 形材移動の入力（フォーム）を開く", form_url)
+
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
 
@@ -113,9 +119,3 @@ if mode == "形材検索（パレット）":
 elif mode == "部品検索（準備中）":
     st.title("⚙️ 部品在庫検索")
     st.info("部品検索機能は現在準備中です。スプレッドシートの準備ができ次第、こちらに検索機能を追加します。")
-    # ここに将来、別のシートを読み込むコードを書きます
-
-st.sidebar.markdown("---")
-st.sidebar.write("### 📝 リンク")
-form_url = "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing"
-st.sidebar.link_button("👉 フォーム入力はこちら", form_url)

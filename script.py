@@ -34,7 +34,7 @@ try:
         all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
         if len(all_values) >= 4:
-            p_idx = 26 
+            p_idx = 26 # AA列
             raw_data = all_values[3:] 
             data_list = []
            
@@ -42,27 +42,29 @@ try:
                 if len(row) > p_idx:
                     p_val = str(row[p_idx]).strip()
                     if p_val and p_val not in ["", "#N/A", "None", "nan"]:
+                        # 各列のデータを抽出（AN列はp_idx+13）
                         data_list.append([
-                            p_val,                                    
-                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", 
-                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               
-                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               
-                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               
-                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               
-                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              
+                            p_val,                                    # AA: 番号
+                            serial_to_datetime(row[p_idx+1]) if len(row) > p_idx+1 else "", # AB: 日時
+                            str(row[p_idx+3]) if len(row) > p_idx+3 else "",               # AD: 商品名
+                            str(row[p_idx+13]) if len(row) > p_idx+13 else "0",            # AN: 本数
+                            str(row[p_idx+5]) if len(row) > p_idx+5 else "",               # AF: 移動前
+                            str(row[p_idx+7]) if len(row) > p_idx+7 else "",               # AH: 移動後
+                            str(row[p_idx+9]) if len(row) > p_idx+9 else "",               # AJ: 品目コード
+                            str(row[p_idx+11]) if len(row) > p_idx+11 else ""              # AL: 担当者
                         ])
            
-            df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "元エリア", "移動エリア", "コード", "担当者"])
+            # DataFrameの作成（本数列を追加）
+            df = pd.DataFrame(data_list, columns=["パレット番号", "日時", "商品名", "本数", "元エリア", "移動エリア", "コード", "担当者"])
 
-            # --- 検索機能の強化 ---
             st.write("### 🔍 在庫を探す")
             col1, col2 = st.columns(2)
             with col1:
-                target_no = st.text_input("① パレット番号で検索 (例: 135)")
+                target_no = st.text_input("① パレット番号で検索")
             with col2:
-                target_name = st.text_input("② 商品名で曖昧検索 (例: 屋根)")
+                target_name = st.text_input("② 商品名で曖昧検索")
 
-            # 1. 番号で検索された場合
+            # 1. 番号で検索
             if target_no:
                 search_val = str(target_no).strip()
                 def normalize_num(s):
@@ -77,17 +79,15 @@ try:
                 else:
                     latest = match_row.iloc[-1]
                     product_name = latest["商品名"]
-                    st.success(f"✅ パレット {search_val} は現在 「{product_name}」 です")
+                    st.success(f"✅ パレット {search_val} は現在 「{product_name}」 ({latest['本数']}本) です")
                     
-                    # 同じ商品の在庫一覧（工場内除外）
                     all_stock = df[df["商品名"] == product_name]
                     available_stock = all_stock[~all_stock["移動エリア"].str.contains("工場内", na=False)]
                     st.write(f"📍 「{product_name}」の有効な在庫一覧")
                     st.dataframe(available_stock, use_container_width=True, hide_index=True)
 
-            # 2. 商品名で曖昧検索された場合
+            # 2. 商品名で曖昧検索
             elif target_name:
-                # 工場内を除外したデータから、文字が含まれるものを抽出
                 filtered_df = df[~df["移動エリア"].str.contains("工場内", na=False)]
                 results = filtered_df[filtered_df["商品名"].str.contains(target_name, na=False)]
                 

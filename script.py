@@ -5,7 +5,6 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
-import base64
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -39,25 +38,6 @@ def serial_to_datetime(serial):
         return (base_date + timedelta(days=serial)).strftime('%m/%d %H:%M')
     except:
         return str(serial)
-
-# 画像をリンク付きで表示するためのヘルパー関数
-def st_image_with_link(image_path, caption):
-    try:
-        with open(image_path, "rb") as f:
-            data = f.read()
-        encoded = base64.b64encode(data).decode()
-        # 画像をタップすると、その画像データ自体を別タブで開くHTML
-        html = f"""
-            <div style="text-align: center;">
-                <a href="data:image/jpeg;base64,{encoded}" target="_blank">
-                    <img src="data:image/jpeg;base64,{encoded}" style="width: 100%; border-radius: 10px; border: 1px solid #ccc;">
-                </a>
-                <p style="color: gray; font-size: 0.8em;">{caption}<br>👆画像をタップして別画面で拡大</p>
-            </div>
-        """
-        st.components.v1.html(html, height=500, scrolling=False)
-    except:
-        st.error("マップ画像が見つかりません。GitHubにアップロードされているか確認してください。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -124,10 +104,18 @@ if mode == "形材検索（パレット）":
                         else:
                             st.success(f"✅ パレット {target_no} は 「{p_name}」 ({latest['本数']}本)")
                         
-                        st.markdown(f"#### 🗺️ 置き場：{loc}")
+                        # --- マップ表示エリア（シンプル＆最大化） ---
+                        st.write(f"### 📍 場所：{loc}")
                         
-                        # 💡 修正：タップで別タブで開くカスタム表示
-                        st_image_with_link("IMG_1556.JPG.crdownload", f"パレット{target_no}の場所：{loc}")
+                        try:
+                            # 💡 画面の横幅いっぱいに画像を表示。タップ案内は削除し、安定性を優先
+                            st.image(
+                                "IMG_1556.JPG.crdownload", 
+                                caption="第二工場レイアウト",
+                                use_container_width=True
+                            )
+                        except:
+                            st.error("マップ画像が見つかりません。")
 
                         st.write("---")
                         st.write(f"📍 **{target_no} の移動履歴**")

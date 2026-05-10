@@ -5,11 +5,12 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
+import base64
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
 
-# --- サイドバーでメニュー切り替え ---
+# --- サイドバー ---
 st.sidebar.title("メニュー選択")
 mode = st.sidebar.radio("検索モードを選択してください", ["形材検索（パレット）", "部品検索"])
 
@@ -23,7 +24,6 @@ def get_client():
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
-# 記号の揺れ（x, *, ×）や全角半角、スペースを統一する関数
 def super_normalize(text):
     if not text:
         return ""
@@ -32,7 +32,6 @@ def super_normalize(text):
     text = re.sub(r'[\s　]', '', text)
     return text
 
-# スプレッドシートのシリアル値を日時に変換
 def serial_to_datetime(serial):
     try:
         serial = float(serial)
@@ -40,6 +39,25 @@ def serial_to_datetime(serial):
         return (base_date + timedelta(days=serial)).strftime('%m/%d %H:%M')
     except:
         return str(serial)
+
+# 画像をリンク付きで表示するためのヘルパー関数
+def st_image_with_link(image_path, caption):
+    try:
+        with open(image_path, "rb") as f:
+            data = f.read()
+        encoded = base64.b64encode(data).decode()
+        # 画像をタップすると、その画像データ自体を別タブで開くHTML
+        html = f"""
+            <div style="text-align: center;">
+                <a href="data:image/jpeg;base64,{encoded}" target="_blank">
+                    <img src="data:image/jpeg;base64,{encoded}" style="width: 100%; border-radius: 10px; border: 1px solid #ccc;">
+                </a>
+                <p style="color: gray; font-size: 0.8em;">{caption}<br>👆画像をタップして別画面で拡大</p>
+            </div>
+        """
+        st.components.v1.html(html, height=500, scrolling=False)
+    except:
+        st.error("マップ画像が見つかりません。GitHubにアップロードされているか確認してください。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -51,7 +69,6 @@ if mode == "形材検索（パレット）":
             SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
             sh = client.open_by_key(SPREADSHEET_ID)
             worksheet = sh.worksheet("フォームの回答 1")
-            # 数値データのまま取得（UNFORMATTED_VALUE）して日時の計算を正確にする
             all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
 
             if len(all_values) >= 4:
@@ -67,7 +84,6 @@ if mode == "形材検索（パレット）":
                             moto_area = str(row[p_idx+5]).strip() if len(row) > p_idx+5 else ""
                             ido_area = str(row[p_idx+7]).strip() if len(row) > p_idx+7 else ""
                             
-                            # 場所判定：移動エリアがあれば優先。なければ元エリアを表示
                             if ido_area and ido_area != "":
                                 current_loc = ido_area
                             else:
@@ -87,9 +103,8 @@ if mode == "形材検索（パレット）":
                 with col1:
                     target_no = st.text_input("① パレット番号で検索")
                 with col2:
-                    target_name = st.text_input("② 商品名で曖昧検索（4x10などもOK）")
+                    target_name = st.text_input("② 商品名で曖昧検索")
 
-                # パレット番号での個別検索
                 if target_no:
                     search_val = super_normalize(target_no)
                     df["temp_no"] = df["パレット番号"].apply(super_normalize)
@@ -105,55 +120,32 @@ if mode == "形材検索（パレット）":
                         is_inside = "工場内" in loc
 
                         if is_inside:
-                            st.warning(f"⚠️ パレット {target_no} は現在 【工場内】 です（外にはありません）")
+                            st.warning(f"⚠️ パレット {target_no} は現在 【工場内】 です")
                         else:
-                            st.success(f"✅ パレット {target_no} は現在 「{p_name}」 ({latest['本数']}本) です")
+                            st.success(f"✅ パレット {target_no} は 「{p_name}」 ({latest['本数']}本)")
                         
-                        # --- マップ表示エリア（クリック拡大対応） ---
-                        map_title = f"🗺️ 置き場マップ（現在の場所：{loc}）"
-                        if is_inside:
-                            map_title += " ※工場内のためマップ範囲外です"
-                            
-                        with st.expander(map_title, expanded=True):
-                            st.info("💡 下の画像をタップすると全画面表示になり、指で拡大できます。")
-                            col_map, col_list = st.columns([2, 1])
-                            with col_map:
-                                try:
-                                    # GitHubにアップロードしたファイル名（そのまま指定）
-                                    st.image(
-                                        "IMG_1556.JPG.crdownload", 
-                                        caption=f"現在の場所：{loc}", 
-                                        use_container_width=True
-                                    )
-                                except:
-                                    st.error("マップ画像が読み込めません。GitHubのファイル名を確認してください。")
-                                
-                            with col_list:
-                                st.write(f"📍 このパレットの移動履歴")
-                                st.dataframe(
-                                    match_row[["日時", "現在の場所", "本数"]].sort_index(ascending=False),
-                                    use_container_width=True,
-                                    hide_index=True
-                                )
+                        st.markdown(f"#### 🗺️ 置き場：{loc}")
+                        
+                        # 💡 修正：タップで別タブで開くカスタム表示
+                        st_image_with_link("IMG_1556.JPG.crdownload", f"パレット{target_no}の場所：{loc}")
 
-                # 商品名での曖昧検索
+                        st.write("---")
+                        st.write(f"📍 **{target_no} の移動履歴**")
+                        st.dataframe(match_row[["日時", "現在の場所", "本数"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
+
                 elif target_name:
                     search_name = super_normalize(target_name)
                     df_temp = df.copy()
                     df_temp["temp_name"] = df_temp["商品名"].apply(super_normalize)
                     results = df_temp[df_temp["temp_name"].str.contains(search_name, na=False)]
                     if results.empty:
-                        st.warning(f"「{target_name}」を含む在庫は見つかりませんでした。")
+                        st.warning(f"「{target_name}」は見つかりませんでした。")
                     else:
                         st.success(f"✅ {len(results)} 件見つかりました")
-                        st.dataframe(
-                            results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False),
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        st.dataframe(results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
 
             st.markdown("---")
-            st.link_button("👉 形材移動の入力（フォーム）を開く", "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing")
+            st.link_button("👉 形材移動の入力（フォーム）", "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
 
@@ -173,25 +165,16 @@ elif mode == "部品検索":
                     if len(row) >= 5:
                         data_list.append({"場所": row[2], "品目コード": row[3], "部品名": row[4]})
                 df_parts = pd.DataFrame(data_list)
-                query = st.text_input("部品名を入力してください（4x10などもOK）", key="parts_search_vfinal")
+                query = st.text_input("部品名を入力してください", key="parts_search_vfinal")
                 if query:
                     search_query = super_normalize(query)
                     df_parts["temp_name"] = df_parts["部品名"].apply(super_normalize)
                     results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
-                    if results.empty:
-                        st.warning(f"「{query}」に一致する部品は見つかりませんでした。")
-                    else:
-                        st.success(f"✅ {len(results)} 件見つかりました")
+                    if not results.empty:
                         for index, row in results.iterrows():
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
-                                col_info, col_bc = st.columns([1, 1])
-                                with col_info:
-                                    st.write(f"🔢 **品目コード**: `{row['品目コード']}`")
-                                    st.write(f"📍 **保管場所**: {row['場所']}")
-                                with col_bc:
-                                    bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
-                                    st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; text-align: center;"><img src="{bc_url}" style="max-width: 100%;"></div>', unsafe_allow_html=True)
-            else:
-                st.info("部品マスターにデータがありません。")
+                                st.write(f"🔢 品目コード: `{row['品目コード']}`")
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
+                                st.image(bc_url)
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")

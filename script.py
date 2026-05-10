@@ -3,6 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import unicodedata
+import re
 from datetime import datetime, timedelta
 
 # ページ設定
@@ -22,10 +23,18 @@ def get_client():
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
-def normalize_text(text):
+# ★ 記号の揺れを吸収する高度な正規化関数
+def super_normalize(text):
     if not text:
         return ""
-    return unicodedata.normalize('NFKC', str(text)).lower().strip()
+    # 1. 全角を半角に、大文字を小文字に（NFKC正規化）
+    text = unicodedata.normalize('NFKC', str(text)).lower()
+    # 2. 似たような記号をすべて半角の "x" に置き換える
+    # ×(全角かける), *(アスタリスク), ✕(バツ) などを対象
+    text = re.sub(r'[×*✕]', 'x', text)
+    # 3. スペースをすべて消す（「4 x 10」でも「4x10」でも一致させるため）
+    text = re.sub(r'[\s　]', '', text)
+    return text
 
 def serial_to_datetime(serial):
     try:
@@ -74,13 +83,13 @@ if mode == "形材検索（パレット）":
                 with col1:
                     target_no = st.text_input("① パレット番号で検索")
                 with col2:
-                    target_name = st.text_input("② 商品名で曖昧検索")
+                    target_name = st.text_input("② 商品名で曖昧検索（4x10などもOK）")
 
                 df_display = df[~df["移動エリア"].str.contains("工場内", na=False)]
 
                 if target_no:
-                    search_val = normalize_text(target_no)
-                    df["temp_no"] = df["パレット番号"].apply(normalize_text)
+                    search_val = super_normalize(target_no)
+                    df["temp_no"] = df["パレット番号"].apply(super_normalize)
                     match_row = df[df["temp_no"] == search_val]
                     if match_row.empty:
                         st.error(f"番号「{target_no}」は見つかりませんでした。")
@@ -91,9 +100,9 @@ if mode == "形材検索（パレット）":
                         results = df_display[df_display["商品名"] == product_name]
                         st.dataframe(results, use_container_width=True, hide_index=True)
                 elif target_name:
-                    search_name = normalize_text(target_name)
+                    search_name = super_normalize(target_name)
                     df_display_temp = df_display.copy()
-                    df_display_temp["temp_name"] = df_display_temp["商品名"].apply(normalize_text)
+                    df_display_temp["temp_name"] = df_display_temp["商品名"].apply(super_normalize)
                     results = df_display_temp[df_display_temp["temp_name"].str.contains(search_name, na=False)]
                     
                     if results.empty:
@@ -130,11 +139,11 @@ elif mode == "部品検索":
                         })
                 df_parts = pd.DataFrame(data_list)
                 
-                query = st.text_input("部品名を入力してください", key="parts_search_new")
+                query = st.text_input("部品名を入力してください（4x10などもOK）", key="parts_search_v3")
                 
                 if query:
-                    search_query = normalize_text(query)
-                    df_parts["temp_name"] = df_parts["部品名"].apply(normalize_text)
+                    search_query = super_normalize(query)
+                    df_parts["temp_name"] = df_parts["部品名"].apply(super_normalize)
                     results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
                     
                     if results.empty:
@@ -142,9 +151,7 @@ elif mode == "部品検索":
                     else:
                         st.success(f"✅ {len(results)} 件見つかりました。タップして詳細を確認してください。")
                         
-                        # 検索結果をループして表示
                         for index, row in results.iterrows():
-                            # 部品名をタイトルにした折りたたみ（エキスパンダー）を作成
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 col_info, col_bc = st.columns([1, 1])
                                 with col_info:

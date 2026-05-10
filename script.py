@@ -104,11 +104,9 @@ if mode == "形材検索（パレット）":
                         else:
                             st.success(f"✅ パレット {target_no} は 「{p_name}」 ({latest['本数']}本)")
                         
-                        # --- マップ表示エリア（シンプル＆最大化） ---
                         st.write(f"### 📍 場所：{loc}")
                         
                         try:
-                            # 💡 画面の横幅いっぱいに画像を表示。タップ案内は削除し、安定性を優先
                             st.image(
                                 "IMG_1556.JPG.crdownload", 
                                 caption="第二工場レイアウト",
@@ -162,7 +160,16 @@ elif mode == "部品検索":
                         for index, row in results.iterrows():
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
-                                st.image(bc_url)
+                                # 💡 修正：背景色を白に固定(background=ffffff)、バーを黒(barcolor=000000)にする設定を追加
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext&background=ffffff&barcolor=000000"
+                                # 白い枠線を付けて、ダークモードでも見やすくする
+                                st.markdown(
+                                    f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'
+                                    f'<img src="{bc_url}">'
+                                    f'</div>', 
+                                    unsafe_allow_html=True
+                                )
+                    else:
+                        st.warning("見つかりませんでした。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")

@@ -161,14 +161,16 @@ elif mode == "部品検索":
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
-                                # 💡 修正：規格を code39 に変更し、余計な文字が入らないように調整
-                                # code39 は前後を * で囲むのが基本ですが、システム側で自動処理させます
-                                clean_code = str(row['品目コード']).strip()
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code39&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
+                                # 💡 修正ポイント
+                                # 1. 余計な記号やスペースを完全に除去
+                                clean_code = str(row['品目コード']).replace('(', '').replace(')', '').replace(' ', '').strip()
+                                
+                                # 2. 規格を CODE128 に戻し、parse=true を追加して誤作動を防止
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000&parse=true"
                                 
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'
-                                    f'<img src="{bc_url}">'
+                                    f'<img src="{bc_url}" onerror="this.src=\'https://via.placeholder.com/150?text=Error\'">'
                                     f'</div>', 
                                     unsafe_allow_html=True
                                 )

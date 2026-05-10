@@ -160,9 +160,9 @@ elif mode == "部品検索":
                         for index, row in results.iterrows():
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
-                                # 💡 修正：背景色を白に固定(background=ffffff)、バーを黒(barcolor=000000)にする設定を追加
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext&background=ffffff&barcolor=000000"
-                                # 白い枠線を付けて、ダークモードでも見やすくする
+                                # 💡 修正：includetext を削除し、純粋なバーコードのみを生成するように変更
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&background=ffffff&barcolor=000000"
+                                
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'
                                     f'<img src="{bc_url}">'

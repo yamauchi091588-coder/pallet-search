@@ -22,11 +22,9 @@ def get_client():
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
-# 全角・半角を統一して検索しやすくする関数
 def normalize_text(text):
     if not text:
         return ""
-    # 全角を半角に、大文字を小文字に変換して比較しやすくする
     return unicodedata.normalize('NFKC', str(text)).lower().strip()
 
 def serial_to_datetime(serial):
@@ -76,13 +74,12 @@ if mode == "形材検索（パレット）":
                 with col1:
                     target_no = st.text_input("① パレット番号で検索")
                 with col2:
-                    target_name = st.text_input("② 商品名で曖昧検索（全角OK）")
+                    target_name = st.text_input("② 商品名で曖昧検索")
 
                 df_display = df[~df["移動エリア"].str.contains("工場内", na=False)]
 
                 if target_no:
                     search_val = normalize_text(target_no)
-                    # 番号も正規化して検索
                     df["temp_no"] = df["パレット番号"].apply(normalize_text)
                     match_row = df[df["temp_no"] == search_val]
                     if match_row.empty:
@@ -95,7 +92,6 @@ if mode == "形材検索（パレット）":
                         st.dataframe(results, use_container_width=True, hide_index=True)
                 elif target_name:
                     search_name = normalize_text(target_name)
-                    # 商品名を正規化した一時的な列で検索
                     df_display_temp = df_display.copy()
                     df_display_temp["temp_name"] = df_display_temp["商品名"].apply(normalize_text)
                     results = df_display_temp[df_display_temp["temp_name"].str.contains(search_name, na=False)]
@@ -132,43 +128,39 @@ elif mode == "部品検索":
                             "品目コード": row[3],
                             "部品名": row[4]
                         })
-                
                 df_parts = pd.DataFrame(data_list)
                 
-                query = st.text_input("部品名を入力してください（全角OK）", key="parts_search")
+                query = st.text_input("部品名を入力してください", key="parts_search_new")
                 
                 if query:
                     search_query = normalize_text(query)
-                    # 部品名を正規化した一時的な列で検索
                     df_parts["temp_name"] = df_parts["部品名"].apply(normalize_text)
                     results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
                     
                     if results.empty:
                         st.warning(f"「{query}」に一致する部品は見つかりませんでした。")
                     else:
-                        st.success(f"✅ {len(results)} 件見つかりました")
+                        st.success(f"✅ {len(results)} 件見つかりました。タップして詳細を確認してください。")
                         
+                        # 検索結果をループして表示
                         for index, row in results.iterrows():
-                            with st.container():
-                                col_info, col_bc = st.columns([2, 1])
+                            # 部品名をタイトルにした折りたたみ（エキスパンダー）を作成
+                            with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
+                                col_info, col_bc = st.columns([1, 1])
                                 with col_info:
-                                    st.subheader(f"🔹 {row['部品名']}")
-                                    st.write(f"📍 **場所**: {row['場所']}")
-                                    st.write(f"🔢 **コード**: {row['品目コード']}")
+                                    st.write(f"🔢 **品目コード**: `{row['品目コード']}`")
+                                    st.write(f"📍 **保管場所**: {row['場所']}")
                                 
                                 with col_bc:
-                                    # バーコード背景を白にするためのCSSとHTML
                                     bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
-                                    # 白背景の枠の中にバーコードを表示
                                     st.markdown(
                                         f"""
-                                        <div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">
+                                        <div style="background-color: white; padding: 10px; border-radius: 5px; text-align: center;">
                                             <img src="{bc_url}" style="max-width: 100%;">
                                         </div>
                                         """,
                                         unsafe_allow_html=True
                                     )
-                                st.divider()
             else:
                 st.info("部品マスターにデータがありません。")
     except Exception as e:

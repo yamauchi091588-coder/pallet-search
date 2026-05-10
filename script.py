@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
 
-# 設定したID
+# Googleドライブの画像ID
 MAP_IMAGE_ID = "1pX7twcuM3DxUcYOD9jJUtrIFH15PKQKJ"
 
 # --- サイドバーでメニュー切り替え ---
@@ -26,6 +26,7 @@ def get_client():
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
+# 記号の揺れを吸収する正規化関数
 def super_normalize(text):
     if not text:
         return ""
@@ -97,11 +98,12 @@ if mode == "形材検索（パレット）":
                         loc = latest['移動エリア']
                         st.success(f"✅ パレット {target_no} は現在 「{product_name}」 ({latest['本数']}本) です。")
                         
-                        # マップ表示
+                        # --- マップ表示エリア (手順2の修正を適用) ---
                         with st.expander(f"🗺️ 【{product_name}】の置き場マップ（現在の場所：{loc}）", expanded=True):
                             col_map, col_list = st.columns([2, 1])
                             with col_map:
-                                map_url = f"https://drive.google.com/uc?id={MAP_IMAGE_ID}"
+                                # 直リンクURLの修正版
+                                map_url = f"https://drive.google.com/uc?export=view&id={MAP_IMAGE_ID}"
                                 st.image(map_url, caption=f"第二工場レイアウト（現在の場所：{loc}）", use_container_width=True)
                             with col_list:
                                 st.write(f"📍 同じ商品の在庫一覧")

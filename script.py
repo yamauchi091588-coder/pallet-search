@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import unicodedata
 from datetime import datetime, timedelta
 
 # ページ設定
@@ -20,6 +21,13 @@ def get_client():
     except Exception as e:
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
+
+# 全角・半角を統一して検索しやすくする関数
+def normalize_text(text):
+    if not text:
+        return ""
+    # 全角を半角に、大文字を小文字に変換して比較しやすくする
+    return unicodedata.normalize('NFKC', str(text)).lower().strip()
 
 def serial_to_datetime(serial):
     try:
@@ -68,28 +76,35 @@ if mode == "形材検索（パレット）":
                 with col1:
                     target_no = st.text_input("① パレット番号で検索")
                 with col2:
-                    target_name = st.text_input("② 商品名で曖昧検索")
+                    target_name = st.text_input("② 商品名で曖昧検索（全角OK）")
 
                 df_display = df[~df["移動エリア"].str.contains("工場内", na=False)]
 
                 if target_no:
-                    search_val = str(target_no).strip()
-                    match_row = df[df["パレット番号"].astype(str).str.contains(search_val, na=False)]
+                    search_val = normalize_text(target_no)
+                    # 番号も正規化して検索
+                    df["temp_no"] = df["パレット番号"].apply(normalize_text)
+                    match_row = df[df["temp_no"] == search_val]
                     if match_row.empty:
-                        st.error(f"番号「{search_val}」は見つかりませんでした。")
+                        st.error(f"番号「{target_no}」は見つかりませんでした。")
                     else:
                         latest = match_row.iloc[-1]
                         product_name = latest["商品名"]
-                        st.success(f"✅ パレット {search_val} は現在 「{product_name}」 ({latest['本数']}本) です")
+                        st.success(f"✅ パレット {target_no} は現在 「{product_name}」 ({latest['本数']}本) です")
                         results = df_display[df_display["商品名"] == product_name]
                         st.dataframe(results, use_container_width=True, hide_index=True)
                 elif target_name:
-                    results = df_display[df_display["商品名"].str.contains(target_name, na=False)]
+                    search_name = normalize_text(target_name)
+                    # 商品名を正規化した一時的な列で検索
+                    df_display_temp = df_display.copy()
+                    df_display_temp["temp_name"] = df_display_temp["商品名"].apply(normalize_text)
+                    results = df_display_temp[df_display_temp["temp_name"].str.contains(search_name, na=False)]
+                    
                     if results.empty:
                         st.warning(f"「{target_name}」を含む在庫は見つかりませんでした。")
                     else:
-                        st.success(f"✅ 「{target_name}」を含む在庫が {len(results)} 件見つかりました")
-                        st.dataframe(results, use_container_width=True, hide_index=True)
+                        st.success(f"✅ 「{target_name}」を含む在庫が見つかりました")
+                        st.dataframe(results.drop(columns=["temp_name"]), use_container_width=True, hide_index=True)
 
             st.markdown("---")
             st.link_button("👉 形材移動の入力（フォーム）を開く", "https://docs.google.com/forms/d/e/1FAIpQLSelaDMBj0krLob-ASucKi6f4VvL70L5NmlGw8ZlVL5CEUTk8A/viewform?usp=sharing")
@@ -105,14 +120,12 @@ elif mode == "部品検索":
         if client:
             SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
             sh = client.open_by_key(SPREADSHEET_ID)
-            # 6番目のシート「部品マスター」を取得
             worksheet = sh.worksheet("部品マスター")
             all_values = worksheet.get_all_values()
 
             if len(all_values) > 1:
-                # C列(場所):2, D列(品目コード):3, E列(部品名):4
                 data_list = []
-                for row in all_values[1:]: # ヘッダー除外
+                for row in all_values[1:]:
                     if len(row) >= 5:
                         data_list.append({
                             "場所": row[2],
@@ -122,10 +135,13 @@ elif mode == "部品検索":
                 
                 df_parts = pd.DataFrame(data_list)
                 
-                query = st.text_input("部品名を入力してください（曖昧検索）", key="parts_search")
+                query = st.text_input("部品名を入力してください（全角OK）", key="parts_search")
                 
                 if query:
-                    results = df_parts[df_parts["部品名"].str.contains(query, na=False)]
+                    search_query = normalize_text(query)
+                    # 部品名を正規化した一時的な列で検索
+                    df_parts["temp_name"] = df_parts["部品名"].apply(normalize_text)
+                    results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
                     
                     if results.empty:
                         st.warning(f"「{query}」に一致する部品は見つかりませんでした。")
@@ -141,10 +157,17 @@ elif mode == "部品検索":
                                     st.write(f"🔢 **コード**: {row['品目コード']}")
                                 
                                 with col_bc:
-                                    # バーコード画像の生成 (Google Charts API)
-                                    # コード39形式、高さ60px、幅200px
+                                    # バーコード背景を白にするためのCSSとHTML
                                     bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
-                                    st.image(bc_url, caption="バーコード")
+                                    # 白背景の枠の中にバーコードを表示
+                                    st.markdown(
+                                        f"""
+                                        <div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">
+                                            <img src="{bc_url}" style="max-width: 100%;">
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
                                 st.divider()
             else:
                 st.info("部品マスターにデータがありません。")

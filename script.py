@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
 
+# 設定したID
+MAP_IMAGE_ID = "1pX7twcuM3DxUcYOD9jJUtrIFH15PKQKJ"
+
 # --- サイドバーでメニュー切り替え ---
 st.sidebar.title("メニュー選択")
 mode = st.sidebar.radio("検索モードを選択してください", ["形材検索（パレット）", "部品検索"])
@@ -23,16 +26,11 @@ def get_client():
         st.error(f"鍵ファイルの読み込み失敗: {e}")
         return None
 
-# ★ 記号の揺れを吸収する高度な正規化関数
 def super_normalize(text):
     if not text:
         return ""
-    # 1. 全角を半角に、大文字を小文字に（NFKC正規化）
     text = unicodedata.normalize('NFKC', str(text)).lower()
-    # 2. 似たような記号をすべて半角の "x" に置き換える
-    # ×(全角かける), *(アスタリスク), ✕(バツ) などを対象
     text = re.sub(r'[×*✕]', 'x', text)
-    # 3. スペースをすべて消す（「4 x 10」でも「4x10」でも一致させるため）
     text = re.sub(r'[\s　]', '', text)
     return text
 
@@ -83,7 +81,7 @@ if mode == "形材検索（パレット）":
                 with col1:
                     target_no = st.text_input("① パレット番号で検索")
                 with col2:
-                    target_name = st.text_input("② 商品名で曖昧検索（4x10などもOK）")
+                    target_name = st.text_input("② 商品名で曖昧検索")
 
                 df_display = df[~df["移動エリア"].str.contains("工場内", na=False)]
 
@@ -96,15 +94,25 @@ if mode == "形材検索（パレット）":
                     else:
                         latest = match_row.iloc[-1]
                         product_name = latest["商品名"]
-                        st.success(f"✅ パレット {target_no} は現在 「{product_name}」 ({latest['本数']}本) です")
-                        results = df_display[df_display["商品名"] == product_name]
-                        st.dataframe(results, use_container_width=True, hide_index=True)
+                        loc = latest['移動エリア']
+                        st.success(f"✅ パレット {target_no} は現在 「{product_name}」 ({latest['本数']}本) です。")
+                        
+                        # マップ表示
+                        with st.expander(f"🗺️ 【{product_name}】の置き場マップ（現在の場所：{loc}）", expanded=True):
+                            col_map, col_list = st.columns([2, 1])
+                            with col_map:
+                                map_url = f"https://drive.google.com/uc?id={MAP_IMAGE_ID}"
+                                st.image(map_url, caption=f"第二工場レイアウト（現在の場所：{loc}）", use_container_width=True)
+                            with col_list:
+                                st.write(f"📍 同じ商品の在庫一覧")
+                                results = df_display[df_display["商品名"] == product_name]
+                                st.dataframe(results[["日時", "移動エリア", "本数"]], use_container_width=True, hide_index=True)
+
                 elif target_name:
                     search_name = super_normalize(target_name)
                     df_display_temp = df_display.copy()
                     df_display_temp["temp_name"] = df_display_temp["商品名"].apply(super_normalize)
                     results = df_display_temp[df_display_temp["temp_name"].str.contains(search_name, na=False)]
-                    
                     if results.empty:
                         st.warning(f"「{target_name}」を含む在庫は見つかりませんでした。")
                     else:
@@ -119,7 +127,6 @@ if mode == "形材検索（パレット）":
 # --- 2. 部品検索モード ---
 elif mode == "部品検索":
     st.title("⚙️ 部品在庫検索")
-    
     try:
         client = get_client()
         if client:
@@ -127,47 +134,30 @@ elif mode == "部品検索":
             sh = client.open_by_key(SPREADSHEET_ID)
             worksheet = sh.worksheet("部品マスター")
             all_values = worksheet.get_all_values()
-
             if len(all_values) > 1:
                 data_list = []
                 for row in all_values[1:]:
                     if len(row) >= 5:
-                        data_list.append({
-                            "場所": row[2],
-                            "品目コード": row[3],
-                            "部品名": row[4]
-                        })
+                        data_list.append({"場所": row[2], "品目コード": row[3], "部品名": row[4]})
                 df_parts = pd.DataFrame(data_list)
-                
-                query = st.text_input("部品名を入力してください（4x10などもOK）", key="parts_search_v3")
-                
+                query = st.text_input("部品名を入力してください", key="parts_search_vfinal")
                 if query:
                     search_query = super_normalize(query)
                     df_parts["temp_name"] = df_parts["部品名"].apply(super_normalize)
                     results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
-                    
                     if results.empty:
                         st.warning(f"「{query}」に一致する部品は見つかりませんでした。")
                     else:
                         st.success(f"✅ {len(results)} 件見つかりました。タップして詳細を確認してください。")
-                        
                         for index, row in results.iterrows():
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 col_info, col_bc = st.columns([1, 1])
                                 with col_info:
                                     st.write(f"🔢 **品目コード**: `{row['品目コード']}`")
                                     st.write(f"📍 **保管場所**: {row['場所']}")
-                                
                                 with col_bc:
                                     bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={row['品目コード']}&scale=2&rotate=N&includetext"
-                                    st.markdown(
-                                        f"""
-                                        <div style="background-color: white; padding: 10px; border-radius: 5px; text-align: center;">
-                                            <img src="{bc_url}" style="max-width: 100%;">
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                    )
+                                    st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; text-align: center;"><img src="{bc_url}" style="max-width: 100%;"></div>', unsafe_allow_html=True)
             else:
                 st.info("部品マスターにデータがありません。")
     except Exception as e:

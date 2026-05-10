@@ -162,12 +162,12 @@ elif mode == "部品検索":
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
                                 # 💡 修正ポイント
-                                # 1. 前後の無駄な余白だけを消し、文字間のスペースは維持する
+                                # カッコが出にくい CODE39 規格を使用
                                 clean_code = str(row['品目コード']).strip()
                                 
-                                # 2. CODE128の「GS1-128」モードを強制無効化し、rawデータとして作成
-                                # これにより、数字だけの並びでもスキャナーが勝手にカッコを付けなくなります
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
+                                # CODE39 はスペースを「 」のまま扱うことができ、カッコなどの制御文字を持たないため
+                                # スキャナーの誤作動を最小限に抑えられます。
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code39&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'

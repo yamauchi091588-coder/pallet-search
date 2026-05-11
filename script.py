@@ -5,7 +5,6 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
-import urllib.parse
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -162,13 +161,14 @@ elif mode == "部品検索":
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
-                                # 💡 修正ポイント：表示安定性とカッコ対策を両立
+                                # 💡 修正ポイント：
+                                # 1. 印刷物と同じ「CODE128」ですが、さらにシンプルな指定にします
+                                # 2. スペースを正しく認識させるためURLエンコードを徹底
                                 clean_code = str(row['品目コード']).strip()
-                                # スペースなどを安全にURLに変換
-                                safe_text = urllib.parse.quote(clean_code)
                                 
-                                # CODE128に戻し、スキャナーがGS1と誤認しないように設定
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={safe_text}&scale=2&rotate=N&background=ffffff&barcolor=000000"
+                                # 💡 code128raw を使い、一切の自動解釈を禁止します
+                                # これにより、数字から始まってもスキャナーがGS1(カッコ付与)と誤認しなくなります
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'

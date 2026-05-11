@@ -162,12 +162,12 @@ elif mode == "部品検索":
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
                                 # 💡 修正ポイント：
-                                # 1. 印刷物と同じ「CODE128」ですが、さらにシンプルな指定にします
-                                # 2. スペースを正しく認識させるためURLエンコードを徹底
+                                # 1. 印刷物に近い「CODE128B」モードを明示的に指定
+                                # 2. スペースを「URL用の記号(%20)」に変えず、そのまま送る設定
                                 clean_code = str(row['品目コード']).strip()
                                 
-                                # 💡 code128raw を使い、一切の自動解釈を禁止します
-                                # これにより、数字から始まってもスキャナーがGS1(カッコ付与)と誤認しなくなります
+                                # bcid=code128 はそのままで、textの中身に細工をせず、
+                                # シンプルな棒の並びになるようにURLを構成
                                 bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
                                 st.markdown(

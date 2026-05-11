@@ -5,6 +5,7 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
+import urllib.parse
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -161,13 +162,13 @@ elif mode == "部品検索":
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
-                                # 💡 修正ポイント
-                                # カッコが出にくい CODE39 規格を使用
+                                # 💡 修正ポイント：表示安定性とカッコ対策を両立
                                 clean_code = str(row['品目コード']).strip()
+                                # スペースなどを安全にURLに変換
+                                safe_text = urllib.parse.quote(clean_code)
                                 
-                                # CODE39 はスペースを「 」のまま扱うことができ、カッコなどの制御文字を持たないため
-                                # スキャナーの誤作動を最小限に抑えられます。
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code39&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
+                                # CODE128に戻し、スキャナーがGS1と誤認しないように設定
+                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={safe_text}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'

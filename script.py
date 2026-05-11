@@ -107,6 +107,7 @@ if mode == "形材検索（パレット）":
                         st.write(f"### 📍 場所：{loc}")
                         
                         try:
+                            # レイアウト図面を最大サイズで表示
                             st.image(
                                 "IMG_1556.JPG.crdownload", 
                                 caption="第二工場レイアウト",
@@ -161,15 +162,15 @@ elif mode == "部品検索":
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
-                                # 💡 修正ポイント：
-                                # 1. 印刷物に近い「CODE128B」モードを明示的に指定
-                                # 2. スペースを「URL用の記号(%20)」に変えず、そのまま送る設定
-                                clean_code = str(row['品目コード']).strip()
+                                # 💡 カッコ対策の重要ポイント：
+                                # 数式の "*" を取り除き、純粋なデータだけでバーコードを作成
+                                raw_code = str(row['品目コード'])
+                                clean_code = raw_code.replace('*', '').strip()
                                 
-                                # bcid=code128 はそのままで、textの中身に細工をせず、
-                                # シンプルな棒の並びになるようにURLを構成
+                                # バーコード生成（背景白、バー黒）
                                 bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
+                                # ダークモードでも見やすいように白い枠を表示
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'
                                     f'<img src="{bc_url}">'

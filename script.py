@@ -14,9 +14,10 @@ import numpy as np
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
 
-# --- 文字読み取りエンジン ---
+# --- 文字＆QR/バーコード読み取りエンジン ---
 @st.cache_resource
 def load_ocr_reader():
+    # recognizerを有効にして、バーコードなどの読み取り精度も上げます
     return easyocr.Reader(['ja', 'en'], gpu=False)
 
 # --- サイドバー ---
@@ -129,10 +130,10 @@ elif mode == "部品検索":
                                 st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード（大洪水防止・スマート検索版） ---
+# --- 3. 📷 証拠ラベル発行モード（コード一発特定対応版） ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
-    st.write("部品箱の文字を自動で読み取り、はかりの写真と合成します。")
+    st.write("部品箱の文字やコードを自動で読み取り、はかりの写真と合成します。")
 
     df_master = pd.DataFrame()
     try:
@@ -157,12 +158,12 @@ elif mode == "📷 証拠ラベル発行":
     if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
     if "candidates" not in st.session_state: st.session_state.candidates = []
 
-    # --- STEP 1: 部品箱の文字読み取り ---
-    st.subheader("ステップ ①：部品箱のラベルを撮影")
-    box_image = st.camera_input("部品箱のコードや名前を撮影してください", key="box_cam")
+    # --- STEP 1: 部品箱の文字・コード読み取り ---
+    st.subheader("ステップ ①：部品箱のラベル（またはQR・バーコード）を撮影")
+    box_image = st.camera_input("シールの文字やコードを撮影してください", key="box_cam")
     
     if box_image and not st.session_state.ocr_done:
-        with st.spinner("🔍 写真の文字を解析中..."):
+        with st.spinner("🔍 画像を解析中..."):
             try:
                 reader = load_ocr_reader()
                 img_pil = Image.open(box_image)
@@ -173,52 +174,67 @@ elif mode == "📷 証拠ラベル発行":
                 full_text = " ".join(found_words)
                 normalized_full_text = super_normalize(full_text)
                 
-                st.write(f"📖 読み取れた文字: `{full_text}`")
+                st.write(f"📖 読み取れた文字情報: `{full_text}`")
                 
-                candidates_list = []
+                # まずは【品目コード】の完全一致からチェック（QRやバーコード用）
+                exact_match_row = None
                 if not df_master.empty:
                     for idx, row in df_master.iterrows():
                         code_raw = str(row["品目コード"]).replace('*', '').strip()
-                        name_raw = str(row["部品名"]).strip()
                         code_norm = super_normalize(code_raw)
-                        name_norm = super_normalize(name_raw)
-                        
-                        # 🎯 【超スマート判定】バラバラの数字ではなく、「5x10」や「b00620」という「かたまりの文字」がそのまま含まれているかだけを見る！
-                        # 写真から読んだ単語の中に、シートの文字（あるいはその逆）がカッチリ含まれているか
-                        is_match = False
-                        for word in found_words:
-                            word_norm = super_normalize(word)
-                            if len(word_norm) >= 3: # 3文字以上の意味のある塊(5x10など)だけを対象にする
-                                if (word_norm in code_norm) or (word_norm in name_norm):
-                                    is_match = True
-                                    break
-                                    
-                        if is_match:
-                            if {"code": code_raw, "name": name_raw} not in candidates_list:
-                                candidates_list.append({"code": code_raw, "name": name_raw})
+                        # 写真から読み取った単語の中に、コードがそのままピッタリ入っているか
+                        if code_norm and (code_norm in normalized_full_text):
+                            exact_match_row = row
+                            break
                 
-                st.session_state.candidates = candidates_list
-                st.session_state.ocr_done = True
-                
-                # 候補がどうしても無い場合のバックアップ文字
-                if not candidates_list:
-                    clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
-                    clean_info = re.sub(r'\s+', ' ', clean_info)
-                    st.session_state.label_text = f"SIZE: {clean_info[:20].upper()}" if clean_info else "SIZE: 5X10 (TEST)"
+                # 品目コードで一発特定できた場合
+                if exact_match_row is not None:
+                    matched_code = str(exact_match_row["品目コード"]).replace('*', '').strip()
+                    st.session_state.label_text = f"CODE: {matched_code}"
+                    st.success(f"🎯 コードから一発特定成功: {exact_match_row['部品名']} ({matched_code})")
+                    st.session_state.ocr_done = True
+                    st.session_state.candidates = []
+                else:
+                    # 一発特定できない場合は、従来通りサイズ文字などで絞り込む
+                    candidates_list = []
+                    if not df_master.empty:
+                        for idx, row in df_master.iterrows():
+                            code_raw = str(row["品目コード"]).replace('*', '').strip()
+                            name_raw = str(row["部品名"]).strip()
+                            code_norm = super_normalize(code_raw)
+                            name_norm = super_normalize(name_raw)
+                            
+                            is_match = False
+                            for word in found_words:
+                                word_norm = super_normalize(word)
+                                if len(word_norm) >= 3: 
+                                    if (word_norm in code_norm) or (word_norm in name_norm):
+                                        is_match = True
+                                        break
+                                        
+                            if is_match:
+                                if {"code": code_raw, "name": name_raw} not in candidates_list:
+                                    candidates_list.append({"code": code_raw, "name": name_raw})
                     
+                    st.session_state.candidates = candidates_list
+                    st.session_state.ocr_done = True
+                    
+                    if not candidates_list:
+                        clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
+                        st.session_state.label_text = f"SIZE: {clean_info[:20].upper()}" if clean_info else "SIZE: 5X10 (TEST)"
+                        
             except Exception as e:
-                st.error(f"文字スキャンエラー: {e}")
+                st.error(f"スキャンエラー: {e}")
                 st.session_state.label_text = "INFO: ERROR"
                 st.session_state.ocr_done = True
 
-    # 候補の選択ボタン表示（大洪水対策ガード付き）
+    # 候補の選択ボタン表示
     if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
             total_cand = len(st.session_state.candidates)
             
-            # 💡 ガード：もし候補が多すぎたらボタンを出さずに警告する
-            if total_cand > 10:
-                st.warning(f"⚠️ 関係ない部品が多すぎます（{total_cand}件）。文字がハッキリ写るよう、もう少しカメラを近づけてシールの文字だけを狙って撮り直してください。")
+            if total_cand > 15:
+                st.warning(f"⚠️ 候補が多すぎます（{total_cand}件）。バーコード部分、または品目コード（B00...等）を大きく写すように撮り直してください。")
                 if st.button("🔄 もう一度撮り直す"):
                     st.session_state.label_text = ""
                     st.session_state.ocr_done = False

@@ -5,7 +5,7 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import io
 import base64
 import os
@@ -46,7 +46,7 @@ def serial_to_datetime(serial):
     except:
         return str(serial)
 
-# --- 🎯 PDFマップを開くボタンを表示する関数 ---
+# --- 🎯 PDFマップを開くボタン ---
 def display_pdf_download_button_powerful():
     try:
         target_file = None
@@ -54,77 +54,49 @@ def display_pdf_download_button_powerful():
             if "屋外" in f and "マップ" in f and f.endswith(".pdf"):
                 target_file = f
                 break
-        
         if target_file and os.path.exists(target_file):
             with open(target_file, "rb") as f:
                 pdf_bytes = f.read()
-            
-            st.download_button(
-                label="🗺️ ここをタップしてマップ（配置図）を開く",
-                data=pdf_bytes,
-                file_name="屋外で管理形材マップ.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        else:
-            st.error("マップ図面ファイルが見つかりません。")
+            st.download_button("🗺️ ここをタップしてマップ（配置図）を開く", data=pdf_bytes, file_name="屋外で管理形材マップ.pdf", mime="application/pdf", use_container_width=True)
     except:
-        st.error("システムエラーが発生しました。")
+        st.error("マップ図面ファイルが見つかりません。")
 
-# --- 1. 形材検索モード（★完全復活フォーム） ---
+# --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
     st.title("📦 形材（パレット）在庫検索")
+    st.info("💡 新しいデータを登録・修正する場合はこちらから")
+    st.link_button("📤 データ入力フォームへ移動する", "https://docs.google.com/forms/d/1NNGdh6t5lmsurybephOXnERfeWl9RGZ3EyAirMS2BV0/viewform")
+    st.markdown("---")
     try:
         client = get_client()
         if client:
-            SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
-            sh = client.open_by_key(SPREADSHEET_ID)
+            sh = client.open_by_key('1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk')
             worksheet = sh.worksheet("フォームの回答 1")
             all_values = worksheet.get_all_values(value_render_option='UNFORMATTED_VALUE')
-            if len(all_values) >= 4:
-                p_idx = 26
-                raw_data = all_values[3:] 
+            if len(all_values) >= 2:
+                headers = [str(h).strip() for h in all_values[0]]
+                p_idx = next((i for i, h in enumerate(headers) if "パレット番号" in h), 26)
+                name_idx = next((i for i, h in enumerate(headers) if "商品名" in h or "品名" in h), p_idx+3)
+                honsu_idx = next((i for i, h in enumerate(headers) if "本数" in h or "数量" in h), p_idx+13)
+                moto_idx = next((i for i, h in enumerate(headers) if "元エリア" in h or "移動元" in h), p_idx+5)
+                ido_idx = next((i for i, h in enumerate(headers) if "移動エリア" in h or "移動先" in h), p_idx+7)
+                
                 data_list = []
-                for row in raw_data:
+                for row in all_values[1:]:
                     if len(row) > p_idx:
                         p_val = str(row[p_idx]).strip()
-                        if p_val and p_val not in ["", "#N/A", "None", "nan"]:
-                            honsu = str(row[p_idx+13]) if len(row) > p_idx+13 else "0"
-                            moto_area = str(row[p_idx+5]).strip() if len(row) > p_idx+5 else ""
-                            ido_area = str(row[p_idx+7]).strip() if len(row) > p_idx+7 else ""
-                            current_loc = ido_area if ido_area and ido_area != "" else moto_area
-                            data_list.append({
-                                "パレット番号": p_val, "日時": serial_to_datetime(row[p_idx+1]),
-                                "商品名": str(row[p_idx+3]), "本数": honsu, "現在の場所": current_loc
-                            })
+                        if p_val and p_val not in ["", "パレット番号"]:
+                            data_list.append({"パレット番号": p_val, "商品名": str(row[name_idx]), "本数": str(row[honsu_idx]), "現在の場所": str(row[ido_idx] if row[ido_idx] else row[moto_idx])})
                 df = pd.DataFrame(data_list)
-                
-                # 復活した検索用入力フォーム
                 target_no = st.text_input("① パレット番号で検索")
-                target_name = st.text_input("② 商品名で曖昧検索")
-                
                 if target_no:
-                    search_val = super_normalize(target_no)
-                    df["temp_no"] = df["パレット番号"].apply(super_normalize)
-                    match_row = df[df["temp_no"] == search_val]
-                    if match_row.empty:
-                        st.error(f"番号「{target_no}」は見つかりませんでした。")
-                    else:
-                        latest = match_row.iloc[-1]
-                        st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
-                        st.write(f"### 📍 場所：{latest['現在の場所']}")
-                        st.write("### 🗺️ 保管エリア・マップ")
+                    match = df[df["パレット番号"].apply(super_normalize) == super_normalize(target_no)]
+                    if not match.empty:
+                        latest = match.iloc[-1]
+                        st.success(f"✅ {latest['商品名']} ({latest['本数']}本) 📍 {latest['現在の場所']}")
                         display_pdf_download_button_powerful()
-                        
-                elif target_name:
-                    search_name = super_normalize(target_name)
-                    df_temp = df.copy()
-                    df_temp["temp_name"] = df_temp["商品名"].apply(super_normalize)
-                    results = df_temp[df_temp["temp_name"].str.contains(search_name, na=False)]
-                    if not results.empty: 
-                        st.dataframe(results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
-    except Exception as e: 
-        st.error(f"エラー: {e}")
+                    else: st.error("見つかりませんでした。")
+    except Exception as e: st.error(f"エラー: {e}")
 
 # --- 2. 部品検索モード ---
 elif mode == "部品検索":
@@ -132,111 +104,36 @@ elif mode == "部品検索":
     try:
         client = get_client()
         if client:
-            SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
-            sh = client.open_by_key(SPREADSHEET_ID)
+            sh = client.open_by_key('1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk')
             worksheet = sh.worksheet("部品マスター")
             all_values = worksheet.get_all_values()
-            if len(all_values) > 1:
-                data_list = []
-                for row in all_values[1:]:
-                    if len(row) >= 5: data_list.append({"場所": row[2], "品目コード": row[3], "部品名": row[4]})
-                df_parts = pd.DataFrame(data_list)
-                query = st.text_input("部品名を入力してください")
-                if query:
-                    search_query = super_normalize(query)
-                    df_parts["temp_name"] = df_parts["部品名"].apply(super_normalize)
-                    results = df_parts[df_parts["temp_name"].str.contains(search_query, na=False)]
-                    if not results.empty:
-                        for index, row in results.iterrows():
-                            with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})", expanded=True):
-                                clean_code = str(row['品目コード']).replace('*', '').strip()
-                                bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
-                                st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
+            df_parts = pd.DataFrame([{"場所": row[2], "品目コード": row[3], "部品名": row[4]} for row in all_values[1:]])
+            query = st.text_input("部品名を入力してください")
+            if query:
+                results = df_parts[df_parts["部品名"].apply(super_normalize).str.contains(super_normalize(query), na=False)]
+                for _, row in results.iterrows():
+                    with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})", expanded=True):
+                        bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={str(row['品目コード']).replace('*', '')}&scale=2&background=ffffff"
+                        st.markdown(f'<img src="{bc_url}">', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード（★写真に部品名を載せる修正） ---
+# --- 3. 📷 証拠ラベル発行モード ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
-    st.write("キーボード入力、またはスマホ機能でコピーした部品コードや部品名を入力してください。")
-
-    df_master = pd.DataFrame()
-    try:
-        client = get_client()
-        if client:
-            SPREADSHEET_ID = '1Te1r8MmdYmq9aFTh1geSzqcbGfOtxLYejIEOU-qzxRk'
-            sh = client.open_by_key(SPREADSHEET_ID)
-            worksheet = sh.worksheet("部品マスター")
-            all_values = worksheet.get_all_values()
-            if len(all_values) > 1:
-                raw_df = pd.DataFrame(all_values[1:])
-                if raw_df.shape[1] >= 5:
-                    df_master = pd.DataFrame()
-                    df_master["場所"] = raw_df[2]
-                    df_master["品目コード"] = raw_df[3]
-                    df_master["部品名"] = raw_df[4]
-    except:
-        pass
-
-    input_text = st.text_input("部品コード、または部品名を入力", key="manual_input")
-    label_text = ""  # 写真に実際に印字するテキスト
-
-    if input_text:
-        norm_input = super_normalize(input_text)
-        matched_row = None
-        
-        if not df_master.empty:
-            for idx, row in df_master.iterrows():
-                m_code = super_normalize(str(row["品目コード"]))
-                m_name = super_normalize(str(row["部品名"]))
-                if (norm_input in m_code) or (norm_input in m_name):
-                    matched_row = row
-                    break
-        
-        if matched_row is not None:
-            # ★ここをコードではなく「部品名」を写真に載せるように変更しました！
-            label_text = f"{matched_row['部品名']}"
-            st.success(f"🎯 部品特定成功: {matched_row['部品名']} を写真に印字します")
-        else:
-            label_text = f"{input_text}"
-            st.info(f"📋 マスター未登録のため、入力文字「{input_text}」をそのまま写真に印字します")
-
+    input_text = st.text_input("部品コード、または部品名を入力")
+    
+    label_text = input_text if input_text else "部品名"
     st.subheader("ステップ ②：はかりの数値を撮影")
-    scale_image = st.camera_input("「〇〇 pcs」の画面を撮影してください", key="scale_cam")
+    scale_image = st.camera_input("「〇〇 pcs」の画面を撮影してください")
 
     if scale_image and label_text:
-        st.subheader("ステップ ③：合成ラベルのプレビュー")
-        
         base_img = Image.open(scale_image).convert("RGB")
         draw = ImageDraw.Draw(base_img)
-        
-        # 上部の黒帯
         draw.rectangle([(0, 0), (base_img.width, 70)], fill="black")
-        
-        # 部品名テキストの書き込み
         draw.text((20, 20), label_text, fill="white")
-        
-        st.image(base_img, caption="この内容で印刷されます", width=400)
+        st.image(base_img, width=400)
         
         buffered = io.BytesIO()
         base_img.save(buffered, format="JPEG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
-        
-        st.write("---")
-        share_js = f"""
-        <script>
-        async function shareLabel() {{
-            const blob = await (await fetch("data:image/jpeg;base64,{img_str}")).blob();
-            const file = new File([blob], "label.jpg", {{ type: "image/jpeg" }});
-            if (navigator.canShare && navigator.canShare({{ files: [file] }})) {{
-                await navigator.share({{ files: [file], title: '合成ラベル印刷' }});
-            }} else {{
-                alert("長押しで画像を保存して印刷アプリに渡してください。");
-            }}
-        }}
-        </script>
-        <button onclick="shareLabel()" style="
-            background-color: #FF4B4B; color: white; padding: 15px; border: none; 
-            border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%;
-        ">🖨️ この合成写真をプリンターに送る</button>
-        """
-        st.markdown(share_js, unsafe_allow_html=True)
+        st.markdown(f'<button onclick="location.href=\'data:image/jpeg;base64,{img_str}\'" style="padding:15px; background:#FF4B4B; color:white; border:none; width:100%; border-radius:8px;">🖨️ この写真を長押しして保存</button>', unsafe_allow_html=True)

@@ -129,7 +129,7 @@ elif mode == "部品検索":
                                 st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード（複数候補選択対応版） ---
+# --- 3. 📷 証拠ラベル発行モード（超強力・照合検索版） ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
     st.write("部品箱の文字を自動で読み取り、はかりの写真と合成します。")
@@ -152,7 +152,6 @@ elif mode == "📷 証拠ラベル発行":
     except:
         pass
 
-    # 状態の管理
     if "label_text" not in st.session_state: st.session_state.label_text = ""
     if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
     if "candidates" not in st.session_state: st.session_state.candidates = []
@@ -175,23 +174,35 @@ elif mode == "📷 証拠ラベル発行":
                 
                 st.write(f"📖 読み取れた文字: `{full_text}`")
                 
-                # 該当するすべての候補をリストアップする
+                # 写真から「数字」だけをすべて抜き出す（例: 5x10 から ['5', '10'] を取得）
+                numbers_in_photo = re.findall(r'\d+', normalized_full_text)
+                
                 candidates_list = []
                 if not df_master.empty:
                     for idx, row in df_master.iterrows():
                         code_raw = str(row["品目コード"]).replace('*', '').strip()
                         name_raw = str(row["部品名"]).strip()
+                        
                         code_norm = super_normalize(code_raw)
                         name_norm = super_normalize(name_raw)
                         
-                        if (code_norm and code_norm in normalized_full_text) or (name_norm and name_norm in normalized_full_text):
+                        # 【強化ルール1】コードや名前に、写真の文字がそのまま含まれているか？
+                        is_match = (code_norm and code_norm in normalized_full_text) or (name_norm and name_norm in normalized_full_text)
+                        
+                        # 【強化ルール2】もし文字がバラバラでも、抽出した数字（5と10など）が両方ともシートの文字に含まれているか？
+                        if not is_match and numbers_in_photo:
+                            # すべての数字が、シートの部品名かコードのどこかに含まれているか確認
+                            if all((num in code_norm or num in name_norm) for num in numbers_in_photo):
+                                is_match = True
+                        
+                        if is_match:
                             if {"code": code_raw, "name": name_raw} not in candidates_list:
                                 candidates_list.append({"code": code_raw, "name": name_raw})
                 
                 st.session_state.candidates = candidates_list
                 st.session_state.ocr_done = True
                 
-                # 候補が1つも無い場合のバックアップ文字
+                # 候補がどうしても無い場合のバックアップ文字
                 if not candidates_list:
                     clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
                     clean_info = re.sub(r'\s+', ' ', clean_info)
@@ -202,12 +213,11 @@ elif mode == "📷 証拠ラベル発行":
                 st.session_state.label_text = "INFO: ERROR"
                 st.session_state.ocr_done = True
 
-    # 💡 候補が複数見つかった場合の「選択ボタン」を表示するエリア
+    # 候補の選択ボタン表示
     if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
-            st.warning(f"🎯 候補が {len(st.session_state.candidates)} 件見つかりました。該当する部品を選んでください：")
+            st.warning(f"🎯 該当しそうな部品が {len(st.session_state.candidates)} 件見つかりました。正しいものをタップしてください：")
             for cand in st.session_state.candidates:
-                # ボタンを並べてタップした方を確定させる
                 if st.button(f"📦 {cand['name']} ({cand['code']})", key=f"btn_{cand['code']}"):
                     st.session_state.label_text = f"CODE: {cand['code']}"
                     st.rerun()

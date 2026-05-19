@@ -8,18 +8,15 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
-
-# 🌟 新しく文字を読み取るライブラリ(EasyOCR)をここで呼び出します
 import easyocr
 import numpy as np
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
 
-# --- 文字読み取りエンジンを準備（初回だけ少し時間がかかります） ---
+# --- 文字読み取りエンジン ---
 @st.cache_resource
 def load_ocr_reader():
-    # 日英の文字を読み取れるように設定
     return easyocr.Reader(['ja', 'en'], gpu=False)
 
 # --- サイドバー ---
@@ -43,8 +40,8 @@ def super_normalize(text):
     if not text:
         return ""
     text = unicodedata.normalize('NFKC', str(text)).lower()
-    text = re.sub(r'[×*✕]', 'x', text)
-    text = re.sub(r'[\s　]', '', text)
+    text = re.sub(r'[×*✕×✕ｘ]', 'x', text) 
+    text = re.sub(r'[\s　-]', '', text)     
     return text
 
 def serial_to_datetime(serial):
@@ -55,7 +52,7 @@ def serial_to_datetime(serial):
     except:
         return str(serial)
 
-# --- 1. 形材検索モード（維持） ---
+# --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
     st.title("📦 形材（パレット）在庫検索")
     try:
@@ -104,7 +101,7 @@ if mode == "形材検索（パレット）":
                     if not results.empty: st.dataframe(results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 2. 部品検索モード（維持） ---
+# --- 2. 部品検索モード ---
 elif mode == "部品検索":
     st.title("⚙️ 部品在庫検索")
     try:
@@ -132,12 +129,11 @@ elif mode == "部品検索":
                                 st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード（本番AI組み込み版） ---
+# --- 3. 📷 証拠ラベル発行モード（複数候補選択対応版） ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
     st.write("部品箱の文字を自動で読み取り、はかりの写真と合成します。")
 
-    # マスターデータの読み込み
     df_master = pd.DataFrame()
     try:
         client = get_client()
@@ -149,74 +145,80 @@ elif mode == "📷 証拠ラベル発行":
             if len(all_values) > 1:
                 raw_df = pd.DataFrame(all_values[1:])
                 if raw_df.shape[1] >= 5:
+                    df_master = pd.DataFrame()
                     df_master["場所"] = raw_df[2]
                     df_master["品目コード"] = raw_df[3]
                     df_master["部品名"] = raw_df[4]
     except:
         pass
 
-    # 最終的に写真にスタンプする文字
-    if "label_text" not in st.session_state:
-        st.session_state.label_text = ""
+    # 状態の管理
+    if "label_text" not in st.session_state: st.session_state.label_text = ""
+    if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
+    if "candidates" not in st.session_state: st.session_state.candidates = []
 
     # --- STEP 1: 部品箱の文字読み取り ---
     st.subheader("ステップ ①：部品箱のラベルを撮影")
     box_image = st.camera_input("部品箱のコードや名前を撮影してください", key="box_cam")
     
-    if box_image:
+    if box_image and not st.session_state.ocr_done:
+        with st.spinner("🔍 写真の文字を解析中..."):
+            try:
+                reader = load_ocr_reader()
+                img_pil = Image.open(box_image)
+                img_np = np.array(img_pil)
+                ocr_results = reader.readtext(img_np)
+                
+                found_words = [res[1] for res in ocr_results]
+                full_text = " ".join(found_words)
+                normalized_full_text = super_normalize(full_text)
+                
+                st.write(f"📖 読み取れた文字: `{full_text}`")
+                
+                # 該当するすべての候補をリストアップする
+                candidates_list = []
+                if not df_master.empty:
+                    for idx, row in df_master.iterrows():
+                        code_raw = str(row["品目コード"]).replace('*', '').strip()
+                        name_raw = str(row["部品名"]).strip()
+                        code_norm = super_normalize(code_raw)
+                        name_norm = super_normalize(name_raw)
+                        
+                        if (code_norm and code_norm in normalized_full_text) or (name_norm and name_norm in normalized_full_text):
+                            if {"code": code_raw, "name": name_raw} not in candidates_list:
+                                candidates_list.append({"code": code_raw, "name": name_raw})
+                
+                st.session_state.candidates = candidates_list
+                st.session_state.ocr_done = True
+                
+                # 候補が1つも無い場合のバックアップ文字
+                if not candidates_list:
+                    clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
+                    clean_info = re.sub(r'\s+', ' ', clean_info)
+                    st.session_state.label_text = f"SIZE: {clean_info[:20].upper()}" if clean_info else "SIZE: 5X10 (TEST)"
+                    
+            except Exception as e:
+                st.error(f"文字スキャンエラー: {e}")
+                st.session_state.label_text = "INFO: ERROR"
+                st.session_state.ocr_done = True
+
+    # 💡 候補が複数見つかった場合の「選択ボタン」を表示するエリア
+    if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
-            with st.spinner("🔍 写真の文字を解析中...（最初の1回目は20秒ほどかかります）"):
-                try:
-                    # AIエンジンを起動して文字を読み取る
-                    reader = load_ocr_reader()
-                    img_pil = Image.open(box_image)
-                    img_np = np.array(img_pil)
-                    ocr_results = reader.readtext(img_np)
-                    
-                    # 読み取れた文字をすべて結合
-                    found_words = []
-                    for res in ocr_results:
-                        found_words.append(res[1])
-                    
-                    full_text = " ".join(found_words)
-                    st.write(f"📖 読み取れた文字: `{full_text}`")
-                    
-                    # スプレッドシートから、読み取った文字を含む部品を探す
-                    matched_code = ""
-                    matched_name = ""
-                    
-                    if not df_master.empty:
-                        for idx, row in df_master.iterrows():
-                            code_clean = str(row["品目コード"]).replace('*', '').strip()
-                            name_clean = str(row["部品名"]).strip()
-                            
-                            # 写真の中に品目コードか部品名が含まれているかチェック
-                            if (code_clean and code_clean.lower() in full_text.lower()) or (name_clean and name_clean in full_text):
-                                matched_code = code_clean
-                                matched_name = name_clean
-                                break
-                    
-                    # もしシートから見つかったらそれを使い、なければ写真の文字をそのまま使う
-                    if matched_code:
-                        st.session_state.label_text = f"CODE: {matched_code}"
-                        st.success(f"🎯 部品特定成功: {matched_name} ({matched_code})")
-                    else:
-                        # 見つからない場合は、写真から見つかった英数字のカタマリをそのまま使う（お家テスト用）
-                        # 英語・数字だけを抽出してスタンプ用に整形
-                        clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
-                        if clean_info:
-                            st.session_state.label_text = f"INFO: {clean_info[:20]}"
-                        else:
-                            st.session_state.label_text = "INFO: UNKNOWN_PART"
-                        st.warning(f"⚠️ マスターには未登録ですが、写真の文字 [{st.session_state.label_text}] で進めます。")
-                except Exception as e:
-                    st.error(f"文字スキャンエラー: {e}")
-                    st.session_state.label_text = "INFO: SCAN_ERROR"
+            st.warning(f"🎯 候補が {len(st.session_state.candidates)} 件見つかりました。該当する部品を選んでください：")
+            for cand in st.session_state.candidates:
+                # ボタンを並べてタップした方を確定させる
+                if st.button(f"📦 {cand['name']} ({cand['code']})", key=f"btn_{cand['code']}"):
+                    st.session_state.label_text = f"CODE: {cand['code']}"
+                    st.rerun()
+        else:
+            st.success(f"確定した部品情報: **{st.session_state.label_text}**")
 
     if st.session_state.label_text:
-        st.info(f"📌 現在セットされている部品情報: **{st.session_state.label_text}**")
-        if st.button("🔄 箱の写真を撮り直す"):
+        if st.button("🔄 箱の写真を撮り直す（クリア）"):
             st.session_state.label_text = ""
+            st.session_state.ocr_done = False
+            st.session_state.candidates = []
             st.rerun()
 
     # --- STEP 2: はかりの撮影 ---
@@ -229,16 +231,11 @@ elif mode == "📷 証拠ラベル発行":
         base_img = Image.open(scale_image).convert("RGB")
         draw = ImageDraw.Draw(base_img)
         
-        # 写真の最上部に黒い文字入れの帯を合成
         draw.rectangle([(0, 0), (base_img.width, 70)], fill="black")
-        
-        # 読み取った文字を白文字でスタンプ
-        # 文字化けを100%防ぐため英数字でドカンと入れます
         draw.text((20, 20), st.session_state.label_text, fill="white")
         
         st.image(base_img, caption="この内容で印刷されます", width=400)
         
-        # 印刷データへ変換
         buffered = io.BytesIO()
         base_img.save(buffered, format="JPEG")
         img_str = base64.b64encode(buffered.getvalue()).decode()

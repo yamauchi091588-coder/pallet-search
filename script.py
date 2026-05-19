@@ -10,6 +10,7 @@ import io
 import base64
 import easyocr
 import numpy as np
+from pypdf import PdfReader  # ← PDFを画像化するためにこれを使います！
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -52,15 +53,23 @@ def serial_to_datetime(serial):
     except:
         return str(serial)
 
-# --- PDFマップを画面に埋め込んで表示する関数 ---
-def display_pdf_map(pdf_filename):
+# --- 🔥【改良版】PDFを安全に画像として画面に表示する関数 ---
+def display_pdf_map_as_image(pdf_filename):
     try:
-        with open(pdf_filename, "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-    except:
-        st.error(f"マップファイル「{pdf_filename}」が読み込めませんでした。GitHub上のファイル名と一致しているか確認してください。")
+        reader = PdfReader(pdf_filename)
+        page = reader.pages[0]
+        
+        # PDFの中に含まれている「背景画像」を直接引っ張り出します
+        if len(page.images) > 0:
+            img_data = page.images[0].data
+            img = Image.open(io.BytesIO(img_data))
+            st.image(img, use_container_width=True)
+        else:
+            # 万が一画像が取り出せない場合は、安全のためにダウンロードリンクを出します
+            with open(pdf_filename, "rb") as f:
+                st.download_button("🗺️ マップPDFを開く・ダウンロード", data=f, file_name=pdf_filename, mime="application/pdf")
+    except Exception as e:
+        st.error("マップ図面の読み込みに失敗しました。ファイルが壊れているか、形式が対応していません。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -102,9 +111,9 @@ if mode == "形材検索（パレット）":
                         st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
                         st.write(f"### 📍 場所：{latest['現在の場所']}")
                         
-                        # 🎯 正しいファイル名「屋外で管理形材マップ.pdf」でマップを表示します！
+                        # 🎯 新しい画像化表示パワーで、確実にマップを出します！
                         st.write("### 🗺️ 保管エリア・マップ")
-                        display_pdf_map("屋外で管理形材マップ.pdf")
+                        display_pdf_map_as_image("屋外で管理形材マップ.pdf")
                         
                 elif target_name:
                     search_name = super_normalize(target_name)

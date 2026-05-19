@@ -57,11 +57,10 @@ def display_pdf_map(pdf_filename):
     try:
         with open(pdf_filename, "rb") as f:
             base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        # PDFを画面いっぱいに表示するHTML
         pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
         st.markdown(pdf_display, unsafe_allow_html=True)
     except:
-        st.error("マップPDFファイルが見つかりません。GitHubに『外で管理形材マップ.pdf』がアップロードされているか確認してください。")
+        st.error(f"マップファイル「{pdf_filename}」が読み込めませんでした。GitHub上のファイル名と一致しているか確認してください。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -103,9 +102,9 @@ if mode == "形材検索（パレット）":
                         st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
                         st.write(f"### 📍 場所：{latest['現在の場所']}")
                         
-                        # PDFマップ（外で管理形材マップ.pdf）を表示
+                        # 🎯 正しいファイル名「屋外で管理形材マップ.pdf」でマップを表示します！
                         st.write("### 🗺️ 保管エリア・マップ")
-                        display_pdf_map("外で管理形材マップ.pdf")
+                        display_pdf_map("屋外で管理形材マップ.pdf")
                         
                 elif target_name:
                     search_name = super_normalize(target_name)
@@ -235,7 +234,7 @@ elif mode == "📷 証拠ラベル発行":
                 st.session_state.label_text = "INFO: ERROR"
                 st.session_state.ocr_done = True
 
-    # 候補の選択ボタン表示（★25件まで拡大しました）
+    # 候補の選択ボタン表示（25件制限）
     if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
             total_cand = len(st.session_state.candidates)

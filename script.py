@@ -8,9 +8,7 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw
 import io
 import base64
-import numpy as np
 import os
-from pyzbar.pyzbar import decode  # ← 📊 バーコード/QRコード専用エンジン！
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -154,7 +152,10 @@ elif mode == "部品検索":
 # --- 3. 📷 証拠ラベル発行モード ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
-    st.write("バーコードやQRコードを撮影すると、自動で部品情報を読み取ります。")
+    
+    # 💡 サーバー制限を回避するため、入力ボックス形式にスマートに変更！
+    st.subheader("💡 確実で使いやすい文字・コード入力")
+    st.write("スマホの「カメラ長押し文字コピー功能」やキーボードから、品目コード（例: B00115など）や部品名を入力してください。")
 
     df_master = pd.DataFrame()
     try:
@@ -174,68 +175,39 @@ elif mode == "📷 証拠ラベル発行":
     except:
         pass
 
-    if "label_text" not in st.session_state: st.session_state.label_text = ""
-    if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
+    input_text = st.text_input("部品コード、または部品名を入力", key="manual_input")
+    label_text = ""
 
-    st.subheader("ステップ ①：部品箱のQR・バーコードを撮影")
-    box_image = st.camera_input("コードが画面中央にハッキリ写るようにしてください", key="box_cam")
-    
-    if box_image and not st.session_state.ocr_done:
-        with st.spinner("📊 コードを高速解析中..."):
-            try:
-                img_pil = Image.open(box_image)
-                # 📊 pyzbarで画像内のバーコード/QRを一発スキャン！
-                decoded_objects = decode(img_pil)
-                
-                if decoded_objects:
-                    # 読み取れたコードの生データ
-                    scanned_code = decoded_objects[0].data.decode('utf-8').strip()
-                    # 前後のアスタリスク等を除去
-                    scanned_code_clean = scanned_code.replace('*', '').strip()
-                    norm_scanned = super_normalize(scanned_code_clean)
-                    
-                    st.write(f"📖 検出データ: `{scanned_code_clean}`")
-                    
-                    # 部品マスターから探す
-                    matched_row = None
-                    if not df_master.empty:
-                        for idx, row in df_master.iterrows():
-                            master_code = str(row["品目コード"]).replace('*', '').strip()
-                            if super_normalize(master_code) == norm_scanned:
-                                matched_row = row
-                                break
-                    
-                    if matched_row is not None:
-                        st.session_state.label_text = f"CODE: {matched_row['品目コード']}"
-                        st.success(f"🎯 読み取り成功: {matched_row['部品名']} ({matched_row['品目コード']})")
-                    else:
-                        st.session_state.label_text = f"CODE: {scanned_code_clean}"
-                        st.warning(f"⚠️ コード『{scanned_code_clean}』は読めましたが、部品マスターに登録されていません。")
-                    
-                    st.session_state.ocr_done = True
-                else:
-                    st.error("❌ 写真からコードを検出できませんでした。もう少し近づけるか、明るい場所でブレずに撮り直してください。")
-                        
-            except Exception as e:
-                st.error(f"スキャン中にエラーが発生しました: {e}")
-
-    if st.session_state.ocr_done:
-        if st.button("🔄 もう一度スキャン（写真をクリア）"):
-            st.session_state.label_text = ""
-            st.session_state.ocr_done = False
-            st.rerun()
+    if input_text:
+        norm_input = super_normalize(input_text)
+        matched_row = None
+        
+        if not df_master.empty:
+            for idx, row in df_master.iterrows():
+                m_code = super_normalize(str(row["品目コード"]))
+                m_name = super_normalize(str(row["部品名"]))
+                if (norm_input in m_code) or (norm_input in m_name):
+                    matched_row = row
+                    break
+        
+        if matched_row is not None:
+            label_text = f"CODE: {matched_row['品目コード']}"
+            st.success(f"🎯 部品特定成功: {matched_row['部品名']} ({matched_row['品目コード']})")
+        else:
+            label_text = f"INFO: {input_text.upper()}"
+            st.info(f"📋 入力された文字をそのままラベルに使用します")
 
     st.subheader("ステップ ②：はかりの数値を撮影")
     scale_image = st.camera_input("「〇〇 pcs」の画面を撮影してください", key="scale_cam")
 
-    if scale_image and st.session_state.label_text:
+    if scale_image and label_text:
         st.subheader("ステップ ③：合成ラベルのプレビュー")
         
         base_img = Image.open(scale_image).convert("RGB")
         draw = ImageDraw.Draw(base_img)
         
         draw.rectangle([(0, 0), (base_img.width, 70)], fill="black")
-        draw.text((20, 20), st.session_state.label_text, fill="white")
+        draw.text((20, 20), label_text, fill="white")
         
         st.image(base_img, caption="この内容で印刷されます", width=400)
         

@@ -5,7 +5,7 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import io
 import base64
 import easyocr
@@ -17,7 +17,6 @@ st.set_page_config(page_title="在庫管理システム", layout="wide")
 # --- 文字＆QR/バーコード読み取りエンジン ---
 @st.cache_resource
 def load_ocr_reader():
-    # recognizerを有効にして、バーコードなどの読み取り精度も上げます
     return easyocr.Reader(['ja', 'en'], gpu=False)
 
 # --- サイドバー ---
@@ -52,6 +51,17 @@ def serial_to_datetime(serial):
         return (base_date + timedelta(days=serial)).strftime('%m/%d %H:%M')
     except:
         return str(serial)
+
+# --- PDFマップを画面に埋め込んで表示する関数 ---
+def display_pdf_map(pdf_filename):
+    try:
+        with open(pdf_filename, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        # PDFを画面いっぱいに表示するHTML
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+    except:
+        st.error("マップPDFファイルが見つかりません。GitHubに『外で管理形材マップ.pdf』がアップロードされているか確認してください。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -92,8 +102,11 @@ if mode == "形材検索（パレット）":
                         latest = match_row.iloc[-1]
                         st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
                         st.write(f"### 📍 場所：{latest['現在の場所']}")
-                        try: st.image("IMG_1556.JPG.crdownload", use_container_width=True)
-                        except: st.error("マップ画像が見つかりません。")
+                        
+                        # PDFマップ（外で管理形材マップ.pdf）を表示
+                        st.write("### 🗺️ 保管エリア・マップ")
+                        display_pdf_map("外で管理形材マップ.pdf")
+                        
                 elif target_name:
                     search_name = super_normalize(target_name)
                     df_temp = df.copy()
@@ -130,7 +143,7 @@ elif mode == "部品検索":
                                 st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード（コード一発特定対応版） ---
+# --- 3. 📷 証拠ラベル発行モード ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
     st.write("部品箱の文字やコードを自動で読み取り、はかりの写真と合成します。")
@@ -153,12 +166,10 @@ elif mode == "📷 証拠ラベル発行":
     except:
         pass
 
-    # 状態の管理
     if "label_text" not in st.session_state: st.session_state.label_text = ""
     if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
     if "candidates" not in st.session_state: st.session_state.candidates = []
 
-    # --- STEP 1: 部品箱の文字・コード読み取り ---
     st.subheader("ステップ ①：部品箱のラベル（またはQR・バーコード）を撮影")
     box_image = st.camera_input("シールの文字やコードを撮影してください", key="box_cam")
     
@@ -176,18 +187,15 @@ elif mode == "📷 証拠ラベル発行":
                 
                 st.write(f"📖 読み取れた文字情報: `{full_text}`")
                 
-                # まずは【品目コード】の完全一致からチェック（QRやバーコード用）
                 exact_match_row = None
                 if not df_master.empty:
                     for idx, row in df_master.iterrows():
                         code_raw = str(row["品目コード"]).replace('*', '').strip()
                         code_norm = super_normalize(code_raw)
-                        # 写真から読み取った単語の中に、コードがそのままピッタリ入っているか
                         if code_norm and (code_norm in normalized_full_text):
                             exact_match_row = row
                             break
                 
-                # 品目コードで一発特定できた場合
                 if exact_match_row is not None:
                     matched_code = str(exact_match_row["品目コード"]).replace('*', '').strip()
                     st.session_state.label_text = f"CODE: {matched_code}"
@@ -195,7 +203,6 @@ elif mode == "📷 証拠ラベル発行":
                     st.session_state.ocr_done = True
                     st.session_state.candidates = []
                 else:
-                    # 一発特定できない場合は、従来通りサイズ文字などで絞り込む
                     candidates_list = []
                     if not df_master.empty:
                         for idx, row in df_master.iterrows():
@@ -228,12 +235,12 @@ elif mode == "📷 証拠ラベル発行":
                 st.session_state.label_text = "INFO: ERROR"
                 st.session_state.ocr_done = True
 
-    # 候補の選択ボタン表示
+    # 候補の選択ボタン表示（★25件まで拡大しました）
     if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
             total_cand = len(st.session_state.candidates)
             
-            if total_cand > 15:
+            if total_cand > 25:
                 st.warning(f"⚠️ 候補が多すぎます（{total_cand}件）。バーコード部分、または品目コード（B00...等）を大きく写すように撮り直してください。")
                 if st.button("🔄 もう一度撮り直す"):
                     st.session_state.label_text = ""
@@ -256,7 +263,6 @@ elif mode == "📷 証拠ラベル発行":
             st.session_state.candidates = []
             st.rerun()
 
-    # --- STEP 2: はかりの撮影 ---
     st.subheader("ステップ ②：はかりの数値を撮影")
     scale_image = st.camera_input("「〇〇 pcs」の画面を撮影してください", key="scale_cam")
 
@@ -275,7 +281,6 @@ elif mode == "📷 証拠ラベル発行":
         base_img.save(buffered, format="JPEG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # --- STEP 4: 印刷アプリへ送信 ---
         st.write("---")
         share_js = f"""
         <script>

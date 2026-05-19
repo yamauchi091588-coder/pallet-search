@@ -5,7 +5,7 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
 import os
@@ -71,7 +71,7 @@ def display_pdf_download_button_powerful():
     except:
         st.error("システムエラーが発生しました。")
 
-# --- 1. 形材検索モード ---
+# --- 1. 形材検索モード（★完全復活フォーム） ---
 if mode == "形材検索（パレット）":
     st.title("📦 形材（パレット）在庫検索")
     try:
@@ -98,8 +98,11 @@ if mode == "形材検索（パレット）":
                                 "商品名": str(row[p_idx+3]), "本数": honsu, "現在の場所": current_loc
                             })
                 df = pd.DataFrame(data_list)
+                
+                # 復活した検索用入力フォーム
                 target_no = st.text_input("① パレット番号で検索")
                 target_name = st.text_input("② 商品名で曖昧検索")
+                
                 if target_no:
                     search_val = super_normalize(target_no)
                     df["temp_no"] = df["パレット番号"].apply(super_normalize)
@@ -118,8 +121,10 @@ if mode == "形材検索（パレット）":
                     df_temp = df.copy()
                     df_temp["temp_name"] = df_temp["商品名"].apply(super_normalize)
                     results = df_temp[df_temp["temp_name"].str.contains(search_name, na=False)]
-                    if not results.empty: st.dataframe(results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
-    except Exception as e: st.error(f"エラー: {e}")
+                    if not results.empty: 
+                        st.dataframe(results[["パレット番号", "商品名", "現在の場所", "本数", "日時"]].sort_index(ascending=False), use_container_width=True, hide_index=True)
+    except Exception as e: 
+        st.error(f"エラー: {e}")
 
 # --- 2. 部品検索モード ---
 elif mode == "部品検索":
@@ -149,13 +154,10 @@ elif mode == "部品検索":
                                 st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;"><img src="{bc_url}"></div>', unsafe_allow_html=True)
     except Exception as e: st.error(f"エラー: {e}")
 
-# --- 3. 📷 証拠ラベル発行モード ---
+# --- 3. 📷 証拠ラベル発行モード（★写真に部品名を載せる修正） ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
-    
-    # 💡 サーバー制限を回避するため、入力ボックス形式にスマートに変更！
-    st.subheader("💡 確実で使いやすい文字・コード入力")
-    st.write("スマホの「カメラ長押し文字コピー功能」やキーボードから、品目コード（例: B00115など）や部品名を入力してください。")
+    st.write("キーボード入力、またはスマホ機能でコピーした部品コードや部品名を入力してください。")
 
     df_master = pd.DataFrame()
     try:
@@ -176,7 +178,7 @@ elif mode == "📷 証拠ラベル発行":
         pass
 
     input_text = st.text_input("部品コード、または部品名を入力", key="manual_input")
-    label_text = ""
+    label_text = ""  # 写真に実際に印字するテキスト
 
     if input_text:
         norm_input = super_normalize(input_text)
@@ -191,11 +193,12 @@ elif mode == "📷 証拠ラベル発行":
                     break
         
         if matched_row is not None:
-            label_text = f"CODE: {matched_row['品目コード']}"
-            st.success(f"🎯 部品特定成功: {matched_row['部品名']} ({matched_row['品目コード']})")
+            # ★ここをコードではなく「部品名」を写真に載せるように変更しました！
+            label_text = f"{matched_row['部品名']}"
+            st.success(f"🎯 部品特定成功: {matched_row['部品名']} を写真に印字します")
         else:
-            label_text = f"INFO: {input_text.upper()}"
-            st.info(f"📋 入力された文字をそのままラベルに使用します")
+            label_text = f"{input_text}"
+            st.info(f"📋 マスター未登録のため、入力文字「{input_text}」をそのまま写真に印字します")
 
     st.subheader("ステップ ②：はかりの数値を撮影")
     scale_image = st.camera_input("「〇〇 pcs」の画面を撮影してください", key="scale_cam")
@@ -206,7 +209,10 @@ elif mode == "📷 証拠ラベル発行":
         base_img = Image.open(scale_image).convert("RGB")
         draw = ImageDraw.Draw(base_img)
         
+        # 上部の黒帯
         draw.rectangle([(0, 0), (base_img.width, 70)], fill="black")
+        
+        # 部品名テキストの書き込み
         draw.text((20, 20), label_text, fill="white")
         
         st.image(base_img, caption="この内容で印刷されます", width=400)

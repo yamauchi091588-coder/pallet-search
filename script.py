@@ -8,16 +8,12 @@ from datetime import datetime, timedelta
 from PIL import Image, ImageDraw
 import io
 import base64
-import easyocr
 import numpy as np
+import os
+from pyzbar.pyzbar import decode  # ← 📊 バーコード/QRコード専用エンジン！
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
-
-# --- 文字＆QR/バーコード読み取りエンジン ---
-@st.cache_resource
-def load_ocr_reader():
-    return easyocr.Reader(['ja', 'en'], gpu=False)
 
 # --- サイドバー ---
 st.sidebar.title("メニュー選択")
@@ -52,22 +48,30 @@ def serial_to_datetime(serial):
     except:
         return str(serial)
 
-# --- 🎯【確実版】PDFマップを開くボタンを表示する関数 ---
-def display_pdf_download_button(pdf_filename):
+# --- 🎯 PDFマップを開くボタンを表示する関数 ---
+def display_pdf_download_button_powerful():
     try:
-        with open(pdf_filename, "rb") as f:
-            pdf_bytes = f.read()
+        target_file = None
+        for f in os.listdir("."):
+            if "屋外" in f and "マップ" in f and f.endswith(".pdf"):
+                target_file = f
+                break
         
-        # 画面に分かりやすい大きなダウンロードボタンを表示します
-        st.download_button(
-            label="🗺️ ここをタップしてマップ（配置図）を開く",
-            data=pdf_bytes,
-            file_name=pdf_filename,
-            mime="application/pdf",
-            use_container_width=True
-        )
+        if target_file and os.path.exists(target_file):
+            with open(target_file, "rb") as f:
+                pdf_bytes = f.read()
+            
+            st.download_button(
+                label="🗺️ ここをタップしてマップ（配置図）を開く",
+                data=pdf_bytes,
+                file_name="屋外で管理形材マップ.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        else:
+            st.error("マップ図面ファイルが見つかりません。")
     except:
-        st.error("マップ図面ファイルが見つかりません。GitHubに『屋外で管理形材マップ.pdf』があるか確認してください。")
+        st.error("システムエラーが発生しました。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -108,10 +112,8 @@ if mode == "形材検索（パレット）":
                         latest = match_row.iloc[-1]
                         st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
                         st.write(f"### 📍 場所：{latest['現在の場所']}")
-                        
-                        # 🗺️ 100%確実に開くボタンを表示！
                         st.write("### 🗺️ 保管エリア・マップ")
-                        display_pdf_download_button("屋外で管理形材マップ.pdf")
+                        display_pdf_download_button_powerful()
                         
                 elif target_name:
                     search_name = super_normalize(target_name)
@@ -152,7 +154,7 @@ elif mode == "部品検索":
 # --- 3. 📷 証拠ラベル発行モード ---
 elif mode == "📷 証拠ラベル発行":
     st.title("📷 はかり数値 ＆ 部品名 合成システム")
-    st.write("部品箱の文字やコードを自動で読み取り、はかりの写真と合成します。")
+    st.write("バーコードやQRコードを撮影すると、自動で部品情報を読み取ります。")
 
     df_master = pd.DataFrame()
     try:
@@ -174,99 +176,53 @@ elif mode == "📷 証拠ラベル発行":
 
     if "label_text" not in st.session_state: st.session_state.label_text = ""
     if "ocr_done" not in st.session_state: st.session_state.ocr_done = False
-    if "candidates" not in st.session_state: st.session_state.candidates = []
 
-    st.subheader("ステップ ①：部品箱のラベル（またはQR・バーコード）を撮影")
-    box_image = st.camera_input("シールの文字やコードを撮影してください", key="box_cam")
+    st.subheader("ステップ ①：部品箱のQR・バーコードを撮影")
+    box_image = st.camera_input("コードが画面中央にハッキリ写るようにしてください", key="box_cam")
     
     if box_image and not st.session_state.ocr_done:
-        with st.spinner("🔍 画像を解析中..."):
+        with st.spinner("📊 コードを高速解析中..."):
             try:
-                reader = load_ocr_reader()
                 img_pil = Image.open(box_image)
-                img_np = np.array(img_pil)
-                ocr_results = reader.readtext(img_np)
+                # 📊 pyzbarで画像内のバーコード/QRを一発スキャン！
+                decoded_objects = decode(img_pil)
                 
-                found_words = [res[1] for res in ocr_results]
-                full_text = " ".join(found_words)
-                normalized_full_text = super_normalize(full_text)
-                
-                st.write(f"📖 読み取れた文字情報: `{full_text}`")
-                
-                exact_match_row = None
-                if not df_master.empty:
-                    for idx, row in df_master.iterrows():
-                        code_raw = str(row["品目コード"]).replace('*', '').strip()
-                        code_norm = super_normalize(code_raw)
-                        if code_norm and (code_norm in normalized_full_text):
-                            exact_match_row = row
-                            break
-                
-                if exact_match_row is not None:
-                    matched_code = str(exact_match_row["品目コード"]).replace('*', '').strip()
-                    st.session_state.label_text = f"CODE: {matched_code}"
-                    st.success(f"🎯 コードから一発特定成功: {exact_match_row['部品名']} ({matched_code})")
-                    st.session_state.ocr_done = True
-                    st.session_state.candidates = []
-                else:
-                    candidates_list = []
+                if decoded_objects:
+                    # 読み取れたコードの生データ
+                    scanned_code = decoded_objects[0].data.decode('utf-8').strip()
+                    # 前後のアスタリスク等を除去
+                    scanned_code_clean = scanned_code.replace('*', '').strip()
+                    norm_scanned = super_normalize(scanned_code_clean)
+                    
+                    st.write(f"📖 検出データ: `{scanned_code_clean}`")
+                    
+                    # 部品マスターから探す
+                    matched_row = None
                     if not df_master.empty:
                         for idx, row in df_master.iterrows():
-                            code_raw = str(row["品目コード"]).replace('*', '').strip()
-                            name_raw = str(row["部品名"]).strip()
-                            code_norm = super_normalize(code_raw)
-                            name_norm = super_normalize(name_raw)
-                            
-                            is_match = False
-                            for word in found_words:
-                                word_norm = super_normalize(word)
-                                if len(word_norm) >= 3: 
-                                    if (word_norm in code_norm) or (word_norm in name_norm):
-                                        is_match = True
-                                        break
-                                        
-                            if is_match:
-                                if {"code": code_raw, "name": name_raw} not in candidates_list:
-                                    candidates_list.append({"code": code_raw, "name": name_raw})
+                            master_code = str(row["品目コード"]).replace('*', '').strip()
+                            if super_normalize(master_code) == norm_scanned:
+                                matched_row = row
+                                break
                     
-                    st.session_state.candidates = candidates_list
+                    if matched_row is not None:
+                        st.session_state.label_text = f"CODE: {matched_row['品目コード']}"
+                        st.success(f"🎯 読み取り成功: {matched_row['部品名']} ({matched_row['品目コード']})")
+                    else:
+                        st.session_state.label_text = f"CODE: {scanned_code_clean}"
+                        st.warning(f"⚠️ コード『{scanned_code_clean}』は読めましたが、部品マスターに登録されていません。")
+                    
                     st.session_state.ocr_done = True
-                    
-                    if not candidates_list:
-                        clean_info = re.sub(r'[^a-zA-Z0-9\s-]', '', full_text).strip()
-                        st.session_state.label_text = f"SIZE: {clean_info[:20].upper()}" if clean_info else "SIZE: 5X10 (TEST)"
+                else:
+                    st.error("❌ 写真からコードを検出できませんでした。もう少し近づけるか、明るい場所でブレずに撮り直してください。")
                         
             except Exception as e:
-                st.error(f"スキャンエラー: {e}")
-                st.session_state.label_text = "INFO: ERROR"
-                st.session_state.ocr_done = True
+                st.error(f"スキャン中にエラーが発生しました: {e}")
 
-    # 候補の選択ボタン表示
-    if st.session_state.ocr_done and st.session_state.candidates:
-        if st.session_state.label_text == "":
-            total_cand = len(st.session_state.candidates)
-            
-            if total_cand > 25:
-                st.warning(f"⚠️ 候補が多すぎます（{total_cand}件）。バーコード部分、または品目コード（B00...等）を大きく写すように撮り直してください。")
-                if st.button("🔄 もう一度撮り直す"):
-                    st.session_state.label_text = ""
-                    st.session_state.ocr_done = False
-                    st.session_state.candidates = []
-                    st.rerun()
-            else:
-                st.info(f"🎯 該当する部品候補が {total_cand} 件見つかりました。該当するものをタップしてください：")
-                for cand in st.session_state.candidates:
-                    if st.button(f"📦 {cand['name']} ({cand['code']})", key=f"btn_{cand['code']}"):
-                        st.session_state.label_text = f"CODE: {cand['code']}"
-                        st.rerun()
-        else:
-            st.success(f"確定した部品情報: **{st.session_state.label_text}**")
-
-    if st.session_state.label_text:
-        if st.button("🔄 箱の写真を撮り直す（クリア）"):
+    if st.session_state.ocr_done:
+        if st.button("🔄 もう一度スキャン（写真をクリア）"):
             st.session_state.label_text = ""
             st.session_state.ocr_done = False
-            st.session_state.candidates = []
             st.rerun()
 
     st.subheader("ステップ ②：はかりの数値を撮影")

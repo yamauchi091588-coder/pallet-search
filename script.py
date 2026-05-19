@@ -10,7 +10,6 @@ import io
 import base64
 import easyocr
 import numpy as np
-from pypdf import PdfReader  # ← PDFを画像化するためにこれを使います！
 
 # ページ設定
 st.set_page_config(page_title="在庫管理システム", layout="wide")
@@ -53,23 +52,22 @@ def serial_to_datetime(serial):
     except:
         return str(serial)
 
-# --- 🔥【改良版】PDFを安全に画像として画面に表示する関数 ---
-def display_pdf_map_as_image(pdf_filename):
+# --- 🎯【確実版】PDFマップを開くボタンを表示する関数 ---
+def display_pdf_download_button(pdf_filename):
     try:
-        reader = PdfReader(pdf_filename)
-        page = reader.pages[0]
+        with open(pdf_filename, "rb") as f:
+            pdf_bytes = f.read()
         
-        # PDFの中に含まれている「背景画像」を直接引っ張り出します
-        if len(page.images) > 0:
-            img_data = page.images[0].data
-            img = Image.open(io.BytesIO(img_data))
-            st.image(img, use_container_width=True)
-        else:
-            # 万が一画像が取り出せない場合は、安全のためにダウンロードリンクを出します
-            with open(pdf_filename, "rb") as f:
-                st.download_button("🗺️ マップPDFを開く・ダウンロード", data=f, file_name=pdf_filename, mime="application/pdf")
-    except Exception as e:
-        st.error("マップ図面の読み込みに失敗しました。ファイルが壊れているか、形式が対応していません。")
+        # 画面に分かりやすい大きなダウンロードボタンを表示します
+        st.download_button(
+            label="🗺️ ここをタップしてマップ（配置図）を開く",
+            data=pdf_bytes,
+            file_name=pdf_filename,
+            mime="application/pdf",
+            use_container_width=True
+        )
+    except:
+        st.error("マップ図面ファイルが見つかりません。GitHubに『屋外で管理形材マップ.pdf』があるか確認してください。")
 
 # --- 1. 形材検索モード ---
 if mode == "形材検索（パレット）":
@@ -111,9 +109,9 @@ if mode == "形材検索（パレット）":
                         st.success(f"✅ パレット {target_no} は 「{latest['商品名']}」 ({latest['本数']}本)")
                         st.write(f"### 📍 場所：{latest['現在の場所']}")
                         
-                        # 🎯 新しい画像化表示パワーで、確実にマップを出します！
+                        # 🗺️ 100%確実に開くボタンを表示！
                         st.write("### 🗺️ 保管エリア・マップ")
-                        display_pdf_map_as_image("屋外で管理形材マップ.pdf")
+                        display_pdf_download_button("屋外で管理形材マップ.pdf")
                         
                 elif target_name:
                     search_name = super_normalize(target_name)
@@ -243,7 +241,7 @@ elif mode == "📷 証拠ラベル発行":
                 st.session_state.label_text = "INFO: ERROR"
                 st.session_state.ocr_done = True
 
-    # 候補の選択ボタン表示（25件制限）
+    # 候補の選択ボタン表示
     if st.session_state.ocr_done and st.session_state.candidates:
         if st.session_state.label_text == "":
             total_cand = len(st.session_state.candidates)

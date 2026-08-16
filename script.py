@@ -107,14 +107,19 @@ if mode == "形材検索（パレット）":
                         st.write(f"### 📍 場所：{loc}")
                         
                         try:
-                            # レイアウト図面を最大サイズで表示
-                            st.image(
-                                "IMG_1556.JPG.crdownload", 
-                                caption="第二工場レイアウト",
+                            # 🗺️ 小文字の map.pdf を読み込むように修正
+                            with open("map.pdf", "rb") as pdf_file:
+                                pdf_bytes = pdf_file.read()
+                            
+                            st.download_button(
+                                label="🗺️ ここをタップして新しいマップ（配置図）を開く",
+                                data=pdf_bytes,
+                                file_name="map.pdf",
+                                mime="application/pdf",
                                 use_container_width=True
                             )
-                        except:
-                            st.error("マップ画像が見つかりません。")
+                        except Exception as e:
+                            st.error("マップファイル（map.pdf）が見つかりません。")
 
                         st.write("---")
                         st.write(f"📍 **{target_no} の移動履歴**")
@@ -162,15 +167,11 @@ elif mode == "部品検索":
                             with st.expander(f"📦 {row['部品名']} (場所: {row['場所']})"):
                                 st.write(f"🔢 品目コード: `{row['品目コード']}`")
                                 
-                                # 💡 カッコ対策の重要ポイント：
-                                # 数式の "*" を取り除き、純粋なデータだけでバーコードを作成
                                 raw_code = str(row['品目コード'])
                                 clean_code = raw_code.replace('*', '').strip()
                                 
-                                # バーコード生成（背景白、バー黒）
                                 bc_url = f"https://bwipjs-api.metafloor.com/?bcid=code128&text={clean_code}&scale=2&rotate=N&background=ffffff&barcolor=000000"
                                 
-                                # ダークモードでも見やすいように白い枠を表示
                                 st.markdown(
                                     f'<div style="background-color: white; padding: 10px; border-radius: 5px; display: inline-block;">'
                                     f'<img src="{bc_url}">'
